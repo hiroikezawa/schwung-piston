@@ -47,7 +47,8 @@ def install(base, package, check=False):
     with opener.open(request, timeout=60) as response:
         response.read()
         flash = urllib.parse.parse_qs(urllib.parse.urlparse(response.url).query).get("flash", [""])[0]
-    if flash != "Installed piston from tarball":
+    # Newer Managers append " - restart Move to run the new version ..." to this.
+    if not flash.startswith("Installed piston from tarball"):
         raise RuntimeError("Manager did not confirm installation: " + flash)
     print(flash)
 
