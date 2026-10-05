@@ -30,7 +30,7 @@ if [[ "${1:-arm64}" == arm64 ]]; then
   for f in ui_chain.js ui_core.mjs help.json README.md; do
     [[ -f "$MODULE/$f" ]] && cp "$MODULE/$f" "$OUT/"
   done
-  cp "$MODULE/LICENSE" "$OUT/"
+  cp "$MODULE/LICENSE" "$MODULE/THIRD_PARTY_LICENSES.md" "$OUT/"
   tar -czf "$MODULE/dist/$ID-module.tar.gz" -C "$MODULE/dist" "$ID"
 fi
 file "$OUT/dsp.so"

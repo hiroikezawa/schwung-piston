@@ -160,4 +160,4 @@ scripts/install.py http://<MoveのIP>:7700   # Schwung Manager経由でインス
 
 ## ライセンス
 
-MIT（`LICENSE`）。`third_party/schwung/host/plugin_api_v1.h` はSchwungのプラグインAPIのヘッダで、MIT、Copyright (c) Charles Vestal です（`third_party/schwung/LICENSE`）。
+MIT（`LICENSE`）。外部のコードは `third_party/schwung/host/plugin_api_v1.h`（SchwungのプラグインAPIのヘッダ。MIT、Copyright (c) Charles Vestal）だけで、その表記は `THIRD_PARTY_LICENSES.md` にまとめています。

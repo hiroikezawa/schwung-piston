@@ -1,6 +1,21 @@
+# Third-party licenses
+
+PISTON itself is MIT licensed (see `LICENSE`). The DSP, the sequencer and the
+built-in digital kicks are this project's own work; the only third-party code
+is the header below.
+
+## Schwung plugin API header
+
+`third_party/schwung/host/plugin_api_v1.h` is Schwung's plugin API header,
+MIT License, Copyright (c) 2025-2026 Charles Vestal. The full text is in
+`third_party/schwung/LICENSE` (Schwung's own license file, kept verbatim).
+
+Source: https://github.com/charlesvestal/schwung
+
+```
 MIT License
 
-Copyright (c) 2026 pepsi
+Copyright (c) 2025-2026 Charles Vestal
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -19,8 +34,4 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
----
-
-PISTON includes a header from Schwung by Charles Vestal, used under the MIT
-License. Its copyright and permission notice is in THIRD_PARTY_LICENSES.md.
+```
