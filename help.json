@@ -1,0 +1,65 @@
+{
+  "title": "PISTON",
+  "children": [
+    {
+      "title": "Pads",
+      "lines": [
+        "One voice at a time:",
+        "top-right = KICK/HAT.",
+        "Row 1: MUTE RESET SHUF",
+        "  RAND FILL(hold)",
+        "Row 2: selectors"
+      ]
+    },
+    {
+      "title": "Steps",
+      "lines": [
+        "8 steps: bottom row.",
+        "16 steps: row 3 = 1-8,",
+        "  row 4 = 9-16.",
+        "Jog to page 2, click",
+        "to switch 8 / 16."
+      ]
+    },
+    {
+      "title": "Row 2",
+      "lines": [
+        "KICK: 1 ANALOG (hold)",
+        "  2 DIGITAL (hold)",
+        "  + step 1-4 to pick",
+        "HAT: 1 MODEL (hold)",
+        "  2 OFFBEAT"
+      ]
+    },
+    {
+      "title": "Knobs",
+      "lines": [
+        "1 VOL 2 MIX/METAL",
+        "3 DECAY 4 DRIVE 5 COMP",
+        "6 RUMBLE / FILTER",
+        "7 REVERB  8 reserved",
+        "Touch = big readout"
+      ]
+    },
+    {
+      "title": "Hat decay motion",
+      "lines": [
+        "HAT surface, touch k3:",
+        "records DECAY per step",
+        "while your finger is on.",
+        "Blue step = open hat.",
+        "Hat RESET clears it."
+      ]
+    },
+    {
+      "title": "Samples",
+      "lines": [
+        "Digital kicks: own WAVs",
+        "UserLibrary/Samples/",
+        "Piston/kick1..4.wav",
+        "Restart Move after",
+        "adding or updating."
+      ]
+    }
+  ]
+}
