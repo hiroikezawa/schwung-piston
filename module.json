@@ -4,7 +4,7 @@
   "abbrev": "PISTON",
   "version": "0.2.2",
   "description": "Live kick + hi-hat drum voice for industrial techno: analog/digital hybrid kick, four analog hat models, two 8-step pad sequencers",
-  "author": "Schwung",
+  "author": "Hiro Ikezawa",
   "api_version": 2,
   "dsp": "dsp.so",
   "ui_chain": "ui_chain.js",
