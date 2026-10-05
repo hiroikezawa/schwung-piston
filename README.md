@@ -1,43 +1,68 @@
 # PISTON
 
-A Schwung sound generator that does two things for industrial techno, live:
-a **hybrid kick** (analog model + digital one-shot, blended) and an **analog
-hi-hat** (four models, closed to open on one knob), each with its own 8-step
-pad sequencer that follows Move's transport.
+Ableton Move上の [Schwung](https://github.com/charlesvestal/schwung) 用サウンドジェネレーターです。インダストリアル・テクノのライブ演奏向けに、次の2つに特化しています。
 
-The DSP is deep; the surface is not. No menus and no Shift gestures: one
-surface per voice, switched by the top-right pad, and a second jog page with
-one setting (8 or 16 steps).
+- **ハイブリッド・キック**：アナログモデル（808 / 909 / INDUSTRIAL）とデジタルのワンショットを好きな比率でブレンド
+- **アナログ・ハイハット**：4モデル。1つのノブでクローズドからオープンまで連続的に変化
 
-## 操作方法（日本語）
+それぞれに8/16ステップのPADシーケンサーがあり、Moveのテンポと再生に同期して動きます。
 
-**準備**: スロットのシンセにPISTONを読み込み、そのシンセを開くと専用画面になり、PADがPISTONの操作面になります。MoveのPlayで再生すると、キックとハットのシーケンサーがMoveのテンポに同期して動きます。画面を離れても鳴り続けます。
+音作りの中身は作り込んでいますが、操作はシンプルにしています。メニューもShift操作もなく、キックとハットで画面を切り替え、ノブは各7本、設定はジョグの2ページ目にある「8/16ステップ」の1つだけです。
 
-**PAD**（キックとハットは別画面。右上のPADで切り替え：赤=KICK、黄=HAT）
+## インストール
+
+### リリースから入れる（おすすめ）
+
+1. [Releases](../../releases) から最新の `piston-module.tar.gz` をダウンロードします。
+2. Schwung Manager（`http://<MoveのIP>:7700`）の Modules →「Install custom」で、そのファイルをアップロードします。
+3. **Moveの電源を一度入れ直します。**
+
+### ソースからビルドして入れる
+
+aarch64用のクロスコンパイラ（`gcc-aarch64-linux-gnu`）とPython 3が必要です。
+
+```bash
+scripts/build.sh arm64                             # dist/piston-module.tar.gz を作成
+python3 scripts/install.py http://<MoveのIP>:7700  # Schwung Manager経由でアップロード
+```
+
+> **更新したら必ずMoveの電源を入れ直してください。** 一度読み込まれたDSP（dsp.so）は、スロットを読み直しても入れ替わりません。KICK画面でノブ6に触れると、画面の一番下に今動いているDSPのバージョンが表示されます。
+
+## 使い始め
+
+スロットのシンセにPISTONを読み込み、そのシンセを開くと専用画面になり、PADがPISTONの操作面に変わります。MoveのPlayで再生すると、キックとハットのシーケンサーが拍の頭から同期して動き出します。画面を離れても（Back、Menu、トラック長押し）鳴り続け、PADとその色はMoveに戻ります。
+
+## PAD
+
+キックとハットは別々の画面です。**右上のPAD**で切り替えます（赤＝KICK、黄＝HAT）。表示していない方のシーケンサーも止まらずに鳴り続けます。
 
 ```
 1段目  [MUTE][RESET][SHUFFLE][RANDOM][FILL][ -- ][ -- ][KICK/HAT]
-2段目  KICK: [ANALOG][DIGITAL]   HAT: [MODEL][OFFBEAT]
-3段目  16ステップ時: ステップ1-8
-4段目  8ステップ時: ステップ1-8 / 16ステップ時: ステップ9-16
+2段目  KICK: [ANALOG][DIGITAL]     HAT: [MODEL][OFFBEAT]
+3段目  16ステップ時：ステップ1-8
+4段目  8ステップ時：ステップ1-8 ／ 16ステップ時：ステップ9-16
 ```
 
 | PAD | 動作 |
 | --- | --- |
-| ステップ | 押すたびにON/OFF。白い光が再生位置。停止中にONにすると1回試聴 |
-| MUTE | 緑=発音、赤=ミュート（パターンや音色は消えない） |
-| RESET | 安全な初期状態へ。キック=1・5拍、ハット=3・7（裏打ち）に戻し、ハットはDECAYモーションも全消去してクローズドに戻す |
-| SHUFFLE | 今のパターンを並べ替え（キックの1拍目は固定） |
-| RANDOM | 新しいパターンを生成 |
-| FILL | 押している間だけフィル（16分連打＋32分ラチェット）。離すと元のパターン |
-| ANALOG（押しながら） | ステップ1/2/3 = 808 / 909 / INDUSTRIAL |
-| DIGITAL（押しながら） | ステップ1-4 = デジタルキック1-4 |
-| MODEL（押しながら） | ステップ1-4 = 808 / 909 / METALLIC / INDUSTRIAL |
-| OFFBEAT | ハットを裏打ち（3・7）にする |
+| ステップ | 16分音符。押すたびにON/OFF。白い光が再生位置。停止中にONにすると1回試聴できます |
+| MUTE | 緑＝発音中、赤＝ミュート。パターンや音色は消えません |
+| RESET | 安全な初期状態に一発で戻します。キック：1・5拍に戻してFILLを解除。ハット：3・7（裏打ち）に戻し、DECAYモーションを全消去、DECAYを標準のクローズドに戻し、FILLと記録を解除 |
+| SHUFFLE | 今のパターンを並べ替えます（キックの1拍目は動かしません） |
+| RANDOM | 新しいパターンを作ります（キックは頭拍寄り、ハットは裏拍寄り） |
+| FILL | 押している間だけフィル（16分の連打と32分のラチェット）。離すと元のパターンに戻ります |
+| ANALOG（押しながら） | ステップ1 / 2 / 3 ＝ 808 / 909 / INDUSTRIAL |
+| DIGITAL（押しながら） | ステップ1〜4 ＝ デジタルキック1〜4 |
+| MODEL（押しながら） | ステップ1〜4 ＝ 808 / 909 / METALLIC / INDUSTRIAL |
+| OFFBEAT | ハットを裏打ち（3・7）にします |
 
-**8 / 16ステップ**: ジョグを回して2ページ目、ジョグを押すと切り替え（キック・ハット共通、既定は8）。8→16は今の8ステップを後半にコピー、16→8は前半を残す。
+ANALOG・DIGITAL・MODELを押している間は、選択肢になるステップPADが光り（今選ばれているものが白）、画面にも一覧が出ます。停止中に選ぶと、その音を試聴できます。
 
-**ノブ**（ノブに触れると画面に大きく表示）
+**8 / 16ステップ**：ジョグを回して2ページ目に移り、ジョグを押すと切り替わります。ジョグを戻すと演奏用の画面に戻ります。キックとハットで共通で、最初は8です。8→16にすると今の8ステップが後半にコピーされるのでリズムは途切れません。16→8では前半が残ります。16ステップ時は、SHUFFLEとRANDOMが前半・後半をそれぞれ8ステップとして扱い、FILLは後半8ステップにかかります。
+
+SHUFFLE・RANDOM・FILLの規則は `dsp/hkh_pattern.c` の先頭にある表で調整できます。
+
+## ノブ
 
 | ノブ | KICK | HAT |
 | --- | --- | --- |
@@ -50,208 +75,89 @@ one setting (8 or 16 steps).
 | 7 | REVERB | REVERB |
 | 8 | 予約（未使用） | 予約（未使用） |
 
-**ハットのDECAYモーション**: HAT画面でノブ3に触れている間だけ、通過したステップにDECAY値を記録します（専用RECボタンなし）。記録したステップは毎ループその値で鳴り、長いDECAYのステップは青く光ります。ハットのRESETで全消去。
+ノブに触れると、その値が画面に大きく表示されます。
 
-**自作サンプル**: `/data/UserData/UserLibrary/Samples/Piston/kick1.wav`〜`kick4.wav` に置くとデジタルキック1-4が置き換わります（Schwung Managerのファイル画面からアップロード可）。
+- **MIX**：等パワーのクロスフェード。0＝アナログのみ、50%＝両方を−3dBずつ、100%＝デジタルのみ。デジタルキックはアナログと体感音量をそろえてあるので、MIXは音量ではなく混ぜ具合だけが変わります（低域どうしが一部打ち消し合い、組み合わせによっては50%で数dB小さくなることがあります）。
+- **DECAY（キック）**：アナログ側の余韻の長さ。モデルごとに音楽的な範囲に合わせています（808：約0.2〜2.6秒、909：0.1〜1.3秒、IND：0.08〜1.8秒）。鳴っている最中に回すと、その余韻も変わります。
+- **DECAY（ハット）**：0＝ごく短い、25%＝標準のクローズド、50%＝少し開いた音、75%＝オープン、100%＝長いオープン。音量の減衰だけでなく、開くほどアタックの「チッ」が弱まり、ノイズの「シャー」が増え、低い成分も出て、金属の響きが細くなります。
+- **DRIVE**：0＝クリーン（完全に素通し）から、強い非対称の歪みまで。歪ませても音量が上がりすぎないよう補正し、耳障りな高域は自動で抑えます。
+- **COMP**：しきい値・比率・アタック・リリース・メイクアップを1つのノブでまとめて動かします。ピークはほぼそのままで、胴と余韻が持ち上がって太くなります。
+- **RUMBLE（キック）**：0＝オフ。キックを暗い残響に送り、歪ませてローパスをかけ、キックが鳴るたびに音量を下げて（ダッキング）、キックの間を「ゴロゴロ」と埋めます。キックのアタックは崩しません。上げるほど長く、低く、汚くなります。
+- **FILTER（ハット）**：0側で暗く、1側で明るく細く。
+- **COLOR / METAL（ハット）**：上げるほど金属的に（音程が上がり、ノイズが減り、響きが鋭く）。
+- **REVERB**：キックとハットで共有するルームリバーブへの送り量（別々に調整）。キックの送りは180Hz以下を切ってあるので、RUMBLEとぶつかりません。
 
-**更新したとき**: インストール後は **Moveの電源を一度入れ直してください**。読み込み済みのDSPはスロットを読み直しても入れ替わりません。KICK画面でノブ6に触れると画面下に動作中のDSPのバージョンが出ます。
+出力にはDCカットと −3dBFS のリミッターがかかっていて、どんな設定でもそれ以上の音は出ません。キック側（キック＋RUMBLE）にも専用の上限があり、キックを盛ってもハットが埋もれないようにしています。
 
-## Install
+## ハットのDECAYモーション
 
-Needs an aarch64 cross compiler (`gcc-aarch64-linux-gnu`) and Python 3.
+HAT画面で**ノブ3に触れている間だけ**、DECAYの値を記録します（専用のRECボタンはありません）。触れている間、再生位置が通過したステップすべてにその時のDECAYが書き込まれ、指を離すと記録が止まります。記録したステップは毎ループその値で鳴り、記録していないステップはノブの値に従います。
 
-```bash
-scripts/build.sh arm64                         # dist/piston-module.tar.gz
-python3 scripts/install.py http://<move-ip>:7700   # upload via Schwung Manager
-```
+例：3ステップ目が鳴る時にDECAYを小さくして触れ、7ステップ目の辺りでDECAYを大きくして触れると、同じ裏打ちハットが「チッ…シャー」と鳴り分けます。
 
-Or upload `dist/piston-module.tar.gz` by hand in Schwung Manager
-(Modules -> Install custom). **Restart the Move after installing or
-updating**: a dsp.so that is already loaded is not replaced by reloading the
-slot.
+DECAYの長いステップはPADが**青**く光り、画面では各ステップのマス内に記録値が棒で表示されます。ハットのRESETで全部消えます。再生していない時は再生位置がないので記録されません。
 
-## Getting it on screen
+## 音のしくみ
 
-Load **Piston** as the synth of a chain slot, then open that slot's
-synth. The module draws its own performance screen and takes the pads while
-that screen is up. Press **Play on Move**: both sequencers start on the
-downbeat and follow Move's tempo. Leave the screen (Back, Menu, a track) and
-the pads and their colours go back to Move; the sequencers keep playing.
+**アナログキック**は、1つのキックの設定違いではなく、それぞれ別の作りです。
 
-## Pads
+- **808**：サイン波の胴、ゆるやかで浅いピッチの下降、少し保持してから長く減衰、柔らかいアタック
+- **909**：三角波を整形した胴をアタックで強く歪ませ、急なピッチ下降、ノイズとパルスによるクリック
+- **INDUSTRIAL**：非整数比（1.414）の位相変調による胴（FMの深さとウェーブフォールドが時間とともに減っていく）、急な2段階のピッチ降下、矩形パルスとノイズのアタックが2つの高Qの金属共振器を叩き、内部で非対称サチュレーションをかけています（「ゴン」「ガン」という質感）
 
-Each voice has its own surface; the **top-right pad** switches between KICK
-(red) and HAT (yellow). Both sequencers always keep playing.
+**ハット**はすべてアナログ風です。非整数比の矩形波6本（帯域制限つき）、ノイズ、2つのバンドパス、ハイパス/ローパス、VCAで構成しています。808は定番の金属クラスター、909はより明るくノイズ多め、METALLICは矩形波どうしをリング変調して響くバンドパスに通し、INDUSTRIALはノイズをクラスターでリング変調して強く歪ませ、サンプル&ホールドをかけています。
 
-```
-ROW 1   [MUTE] [RESET] [SHUFFLE] [RANDOM] [FILL] [ -- ] [ -- ] [KICK/HAT]
-ROW 2   KICK: [ANALOG] [DIGITAL]   HAT: [MODEL] [OFFBEAT]
-ROW 3   16 steps: steps 1-8
-ROW 4   8 steps: steps 1-8   /   16 steps: steps 9-16
-```
+**デジタルキック**1〜4（PUNCH / SUB / CRUSH / HARD）は内蔵です。ビルド時に `scripts/gen_digital_kicks.py` で合成しているので、他人の音源は含んでいません。
 
-- **Steps**: 1/16 notes, tap to toggle. Defaults: kick on 1 and 5, hat on 3
-  and 7 (and 9/13, 11/15 at 16 steps). The white step is the playhead. While
-  the transport is stopped, turning a step on plays it once.
-- **8 / 16 steps**: turn the **jog** to page 2 and **click** to switch; turn
-  back for the play page. Shared by both voices, default 8. Going to 16 repeats
-  the 8 you had; going back to 8 keeps the first half.
-- **MUTE**: green = playing, red = muted. The pattern and sound are kept.
-- **RESET**: the safe way home. Kick: pattern back to 1/5, FILL released.
-  Hat: pattern back to 3/7, all DECAY motion erased, DECAY back to a normal
-  closed hat, FILL released, recording stopped.
-- **SHUFFLE** rearranges the pattern (the kick's step 1 stays put);
-  **RANDOM** makes a new one. At 16 steps each half is treated as its own 8.
-  Rules and tables: `dsp/hkh_pattern.c`.
-- **FILL** (hold): a roll with 1/32 ratchets through the last 8 steps; let go
-  and the written pattern is back.
-- **ANALOG** (hold) + step 1/2/3: 808 / 909 / INDUSTRIAL. **DIGITAL** (hold) +
-  step 1-4: digital kick 1-4. **MODEL** (hold) + step 1-4: 808 / 909 /
-  METALLIC / INDUSTRIAL. The choices light up (current one white) and the
-  screen lists them. Picking while stopped auditions the sound.
-- **OFFBEAT**: hat pattern = the offbeats (3 and 7).
+### 自作サンプルへの差し替え
 
-## Knobs
-
-| Knob | KICK | HAT |
-| --- | --- | --- |
-| 1 | VOLUME | VOLUME |
-| 2 | ANALOG / DIGITAL MIX | COLOR / METAL |
-| 3 | DECAY | DECAY (closed -> open) |
-| 4 | DRIVE | DRIVE |
-| 5 | COMP | COMP |
-| 6 | RUMBLE | FILTER |
-| 7 | REVERB | REVERB |
-| 8 | reserved | reserved |
-
-Touch a knob to see it big on screen.
-
-- **MIX**: equal-power crossfade, 0 = analog only, 50 % = both at -3 dB,
-  100 % = digital only. The digital kicks are loudness-matched to the analog
-  ones so MIX blends rather than changes volume. (Two ~50 Hz bodies can
-  partly cancel mid-way; some model/sample pairs are a few dB softer at 50 %.)
-- **DECAY** (kick): the analog body's decay, mapped per model (808 roughly
-  0.2-2.6 s, 909 0.1-1.3 s, IND 0.08-1.8 s). Turning it reshapes the tail that
-  is already ringing.
-- **DECAY** (hat): 0 very tight, 25 % normal closed, 50 % loose, 75 % open,
-  100 % long open. More than the VCA moves: as it opens the "chick" transient
-  recedes, sizzle comes up, the highpass drops and the metallic resonances
-  narrow.
-- **DRIVE**: 0 = clean (bypassed), up to heavy asymmetric distortion, with
-  loudness compensation and a lowpass that closes to keep it from fizzing.
-- **COMP**: one knob for threshold, ratio, attack, release and makeup; the
-  auto-makeup keeps the level roughly steady (within ~3 dB across the range).
-- **RUMBLE**: 0 = off. The kick feeds a dark feedback-delay reverb, which is
-  saturated, lowpassed (24 dB), and ducked by the kick so it fills the gaps
-  without touching the punch. More = longer, lower, dirtier.
-- **REVERB**: a room shared by both voices, separate sends. The kick's send is
-  highpassed at 180 Hz so it never competes with RUMBLE.
-
-The output is DC-blocked and limited at -3 dBFS whatever the knobs do.
-
-## Hat DECAY motion
-
-In **HAT** mode, **touching knob 3** starts recording; lifting your finger
-stops it. While you touch it, the DECAY value is written into every step the
-playhead passes (and the current one immediately). Recorded steps then play
-back with their own DECAY on every loop; steps you never touched follow the
-knob. Example: touch while step 3 plays with DECAY low, later touch around
-step 7 with DECAY high, and the same offbeat hat goes "chick ... shhh".
-
-Hat steps with a long recorded DECAY light **blue** on the pads, and the
-screen shows each recorded value as a bar inside the hat cells. Hat RESET
-erases all of it. Recording needs the transport running (there is no
-playhead to write to otherwise).
-
-## Sounds
-
-**Analog kicks** are separate voice designs, not one kick with presets:
-808 (sine body, slow shallow glide, hold then long decay, soft tick), 909
-(triangle-to-sine body driven hard at the attack, steep sweep, noise + pulse
-click), INDUSTRIAL (phase-modulated body at an inharmonic 1.414 ratio with a
-decaying FM index and wavefold, a steep two-stage pitch dive, a square-pulse
-and noise attack that strikes two high-Q inharmonic resonators, and an
-asymmetric saturator inside the voice: "GON / GAN").
-
-**Hats** are all analog-style: six square oscillators at non-integer ratios
-(band-limited), noise, two bandpasses, highpass/lowpass, VCA. 808 is the
-classic cluster; 909 is brighter with more noise; METALLIC ring-modulates the
-squares through ringing bandpasses; INDUSTRIAL ring-modulates noise by the
-cluster, saturates hard and sample-and-holds it.
-
-**Digital kicks** 1-4 are built in (PUNCH, SUB, CRUSH, HARD), rendered at
-build time by `scripts/gen_digital_kicks.py`, so the module ships no
-third-party audio. Replace any of them with your own:
+次の場所にWAVを置くと、デジタルキック1〜4がそれに置き換わります（Schwung Managerのファイル画面からアップロードできます。モジュールを更新しても消えません）。
 
 ```
-/data/UserData/UserLibrary/Samples/Piston/kick1.wav ... kick4.wav
+/data/UserData/UserLibrary/Samples/Piston/kick1.wav 〜 kick4.wav
 ```
 
-(upload them with Schwung Manager's file browser; they survive module
-updates). PCM 8/16/24/32-bit or float, any channel count, 8-192 kHz; they are
-downmixed, resampled to 44.1 kHz, capped at 2 s, loudness-matched and read
-once when the module loads (reload the module after adding files). The screen
-shows USR1-4 for a replaced slot.
+PCM 8/16/24/32bitまたは浮動小数点、チャンネル数・サンプルレート（8〜192kHz）は問いません。モノラル化・44.1kHz化・最長2秒・音量合わせを自動で行います。読み込みはモジュールの起動時なので、置いた後はMoveを再起動してください。差し替えたスロットは画面に USR1〜4 と表示されます。
 
 ## MIDI
 
-The slot also answers notes from Move's track or a controller: 35/36 kick,
-42/44 hat at the current DECAY, 46 open hat.
+スロットはMoveのトラックやコントローラーからのノートでも鳴ります。35/36＝キック、42/44＝今のDECAYのハット、46＝オープンハット。
 
-## Why it never sleeps
+## 無音でも休止しない理由
 
-Schwung parks a chain slot whose output has been silent for about a second and
-then renders it only twice a second (`DSP_IDLE_THRESHOLD` in the shim). This
-module is its own sequencer, so a parked slot would start up to half a second
-late after Play. There is no opt-out for a sound generator, so when its output
-would be completely silent the module emits a 6 LSB DC offset (-75 dBFS)
-instead. DC was chosen over a pulse because it stays inaudible through any
-distortion placed after it. While nothing is sounding the engine takes an
-idle fast path, so staying awake costs next to nothing.
+Schwungは、1秒ほど無音が続いたスロットの処理を止め、その後は0.5秒おきにしか動かしません。PISTONは自分でシーケンスしているため、休止状態だとPlayを押してから最初の音が最大0.5秒遅れてしまいます。サウンドジェネレーター側からこれを止める仕組みがないので、出力が完全に無音になる時だけ、6LSB（−75dBFS）のごく小さなDC成分を出して休止に入らないようにしています。パルスではなくDCにしているのは、後ろに歪み系のエフェクトを挿しても聞こえる音にならないためです。何も鳴っていない間は処理を省略するので、負荷はほぼかかりません。
 
-## Known limitations
+## 既知の制限
 
-- Leaving this screen with Back, Menu or a Move long-press hands the pads and
-  their colours back to Move. Jumping straight to another view (a Track tap
-  that switches slot, Master FX, Global Settings) gives the pads back but can
-  leave this module's colours on them until Move next repaints (change track
-  or pad mode on Move).
-- User WAVs are read when the module loads; after adding or replacing one,
-  reload the module (or the set).
-- Verified by native tests and an ARM64 build; the pad/LED/touch behaviour
-  follows Schwung's shadow-UI source and has not yet been checked on hardware.
+- Back・Menu・Moveのトラック長押しで画面を離れた時は、PADと色をMoveに戻します。ただし別のビューへ直接移った時（トラックのタップでスロット切替、Master FX、Global Settings など）は、Moveが再描画するまでPISTONの色が残ることがあります（Move側でトラックやPADモードを切り替えると直ります）。
+- 画面下の16個のステップボタンは、Schwung本体の仕様で短押しが純正側に渡ります。PISTONでは横取りできません。
+- 自作WAVはモジュールの起動時に読み込みます。
 
-## Building and testing
+## 開発
 
 ```
-scripts/test.sh            # native build + engine tests (ASan/UBSan) + dlopen smoke + UI tests
-scripts/build.sh arm64     # Move build: dist/piston-module.tar.gz
-scripts/render_demo.sh     # audition WAVs into build/demo/
-scripts/install.py http://<move-ip>:7700   # upload through Schwung Manager
+scripts/test.sh            # ネイティブビルド＋エンジンテスト（ASan/UBSan）＋dlopenスモーク＋UIテスト＋ARM64ビルドとABI確認
+scripts/build.sh arm64     # Move用ビルド：dist/piston-module.tar.gz
+scripts/render_demo.sh     # 試聴用WAVを build/demo/ に書き出し（Moveなしで音を確認）
+scripts/install.py http://<MoveのIP>:7700   # Schwung Manager経由でインストール
 ```
 
-## License
+| ファイル | 内容 |
+| --- | --- |
+| `dsp/hkh_plugin.c` | プラグインAPI v2の窓口、状態の保存/復元、画面用の状態、休止防止 |
+| `dsp/hkh_engine.c` | パラメータ、PADの命令、ブロックごとの信号経路 |
+| `dsp/hkh_seq.c` | 8/16ステップのクロック追従（ホストの拍位置） |
+| `dsp/hkh_pattern.c` | SHUFFLE / RANDOM / FILL の規則と表 |
+| `dsp/hkh_kick.c` | 808 / 909 / INDUSTRIAL のアナログキック |
+| `dsp/hkh_digital.c` | ワンショット再生 |
+| `dsp/hkh_samples.c` | 内蔵キック、自作WAVの読み込み（ワーカースレッド） |
+| `dsp/hkh_hat.c` | アナログハット4モデル |
+| `dsp/hkh_fx.c` | DRIVE、COMP、RUMBLE、REVERB、リミッター |
+| `ui_core.mjs` | PADの操作面（純粋なロジック、nodeでテスト） |
+| `ui_chain.js` | それをSchwungの画面につなぐ部分 |
 
-MIT (`LICENSE`). `third_party/schwung/host/plugin_api_v1.h` is Schwung's
-plugin API header, MIT, Copyright (c) Charles Vestal
-(`third_party/schwung/LICENSE`).
+音声処理の経路ではメモリ確保もロックもせず（インスタンスは6個の固定プール）、処理量も上限があります。ファイルの読み込みは、優先度を通常に下げてコア0〜2に移したワーカースレッドだけが行います。
 
-## Files
+## ライセンス
 
-```
-dsp/hkh_plugin.c   plugin API v2 adapter, state, ui_state, keepalive
-dsp/hkh_engine.c   parameters, commands, the per-block signal path
-dsp/hkh_seq.c      8-step clock follower (host beat position)
-dsp/hkh_pattern.c  SHUFFLE / RANDOM / FILL rules and tables
-dsp/hkh_kick.c     808 / 909 / INDUSTRIAL analog kicks
-dsp/hkh_digital.c  one-shot player
-dsp/hkh_samples.c  built-in kicks, user WAV loader (worker thread)
-dsp/hkh_hat.c      four analog hat models
-dsp/hkh_fx.c       DRIVE, COMP, RUMBLE, REVERB, limiter
-ui_core.mjs        the pad surface (pure logic, tested under node)
-ui_chain.js        binds it to the shadow UI
-```
-
-Everything on the audio path is allocation-free (a fixed pool of six
-instances), lock-free and bounded; files are read only by a worker thread that
-drops to SCHED_OTHER on cores 0-2 first.
+MIT（`LICENSE`）。`third_party/schwung/host/plugin_api_v1.h` はSchwungのプラグインAPIのヘッダで、MIT、Copyright (c) Charles Vestal です（`third_party/schwung/LICENSE`）。
