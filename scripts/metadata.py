@@ -24,6 +24,12 @@ assert [float(p["default"]) for p in params] == defaults, ("module.json defaults
 for p in params:
     assert p["type"] == "float" and p["min"] == 0 and p["max"] == 1, p
 
+# The screen shows HKH_DSP_BUILD as "dsp X.Y.Z"; it must name this release.
+plugin = (root / "dsp" / "hkh_plugin.c").read_text()
+build = int(re.search(r"#define HKH_DSP_BUILD (\d+)", plugin).group(1))
+major, minor, patch = (int(x) for x in manifest["version"].split("."))
+assert build == major * 10000 + minor * 100 + patch, ("HKH_DSP_BUILD does not match module.json version", build, manifest["version"])
+
 literal = json.dumps(json.dumps(params, separators=(",", ":")), ensure_ascii=True)
 out = pathlib.Path(sys.argv[1])
 out.write_text("/* Generated from module.json by scripts/metadata.py. Do not edit. */\n"
