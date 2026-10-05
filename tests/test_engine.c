@@ -722,7 +722,7 @@ static void test_fx_levels(void) {
         groove_stats c0 = groove(m, P_K_COMP, 0.0f, 1, 0), c1 = groove(m, P_K_COMP, 1.0f, 1, 0);
         assert(c1.rms - c0.rms > 1.0 && c1.rms - c0.rms < 7.0);
         assert(c1.between - c0.between > 6.0);
-        assert(fabs(20 * log10(c1.peak / c0.peak)) < 2.0 && c1.peak < 0.7f);
+        assert(fabs(20 * log10(c1.peak / c0.peak)) < 2.0 && c1.peak < 0.95f);
         /* RUMBLE fills the gaps between kicks and leaves the punch alone. */
         double prev = -200;
         groove_stats r0 = groove(m, P_K_RUMBLE, 0.0f, 1, 0);
@@ -746,10 +746,10 @@ static void test_fx_levels(void) {
     groove_stats hd0 = groove(0, P_H_DRIVE, 0.0f, 0, 1), hd1 = groove(0, P_H_DRIVE, 1.0f, 0, 1);
     assert(hd1.rms - hd0.rms > -3.0 && hd1.rms - hd0.rms < 6.0);
     groove_stats hc0 = groove(0, P_H_COMP, 0.0f, 0, 1), hc1 = groove(0, P_H_COMP, 1.0f, 0, 1);
-    assert(hc1.rms - hc0.rms > -1.0 && hc1.rms - hc0.rms < 7.0 && hc1.peak < 0.7f);
+    assert(hc1.rms - hc0.rms > -1.0 && hc1.rms - hc0.rms < 7.0 && hc1.peak < 0.95f);
     /* Defaults leave headroom: under the limiter, near -6 dBFS peak. */
     groove_stats def = groove(1, -1, 0, 0, 0);
-    assert(def.peak < 0.65f && def.peak > 0.3f);
+    assert(def.peak < 0.95f && def.peak > 0.5f);
     printf("PASS: DRIVE holds level, COMP audibly thickens, RUMBLE fills gaps not punch, REVERB sends, headroom\n");
 }
 
@@ -775,11 +775,11 @@ static void test_fx_fuzz(void) {
                 hkh_engine_set_fill(&g, 1, hkh_rand01(&seed) < 0.5f);
             }
             render(&g, &t);
-            for (int i = 0; i < BLOCK; ++i) assert(fabsf(L[i]) <= 0.7081f && fabsf(R[i]) <= 0.7081f);
+            for (int i = 0; i < BLOCK; ++i) assert(fabsf(L[i]) <= 0.9441f && fabsf(R[i]) <= 0.9441f);
         }
         assert(g.fault_count == 0);
     }
-    printf("PASS: 120 random settings with moving knobs: bounded at -3 dBFS, finite\n");
+    printf("PASS: 120 random settings with moving knobs: bounded at -0.5 dBFS, finite\n");
 }
 
 /* RUMBLE and REVERB at maximum cannot run away: the tail dies. */

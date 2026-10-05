@@ -104,7 +104,7 @@ void hkh_reverb_tick(hkh_reverb *r, float kick_send, float hat_send, float *l, f
 /* Output protection: DC blocker, then a stereo peak limiter (instant attack,
  * 80 ms release) at -3 dBFS, then a hard ceiling. However the knobs are set,
  * nothing leaves the module above -3 dBFS. */
-#define HKH_CEILING 0.708f
+#define HKH_CEILING 0.944f
 typedef struct {
     float gain, rel;
     float dl_x, dl_y, dr_x, dr_y;

@@ -31,13 +31,13 @@ const float hkh_param_defaults[P_COUNT] = {
  * tool, so the defaults (kick 0.8, hat 0.7) peak well under it. The hat gets
  * more gain because a closed hat is short and sparse: at equal knob settings
  * the two voices then sit where a techno mix wants them. */
-static float kick_vol_gain(float v) { return 0.85f * v * v; }
-static float hat_vol_gain(float v) { return 5.0f * v * v; }
+static float kick_vol_gain(float v) { return 1.6f * v * v; }
+static float hat_vol_gain(float v) { return 8.0f * v * v; }
 /* The hat bus is soft-clipped at this ceiling AFTER its volume: a hat is all
  * crest, so more gain alone only feeds the limiter. Clipping the spikes lets
  * the body come up -- loud next to a compressed, rumbling kick. */
-#define HAT_CEILING 0.6f
-#define KICK_CEILING 0.55f
+#define HAT_CEILING 0.85f
+#define KICK_CEILING 0.8f
 /* REVERB sends: squared, so the first half of the knob is subtle. The kick's
  * send is highpassed at 180 Hz inside the reverb (the lows are RUMBLE's), so
  * it needs more level to be heard. */
