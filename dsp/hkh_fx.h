@@ -78,7 +78,9 @@ float hkh_rumble_tick(hkh_rumble *r, float kick);
 
 /* REVERB: a stereo 8-line FDN room shared by both voices, each with its own
  * send. The kick's send is highpassed at 180 Hz so the reverb never competes
- * with RUMBLE for the low end, and the return is highpassed at 150 Hz. */
+ * with RUMBLE for the low end. The return is band-limited: highpassed at
+ * 150 Hz and lowpassed at 3.5 kHz (12 dB/oct), and the loop damping (~2.5 kHz)
+ * darkens the tail as it decays, so the hats' fizz is not what rings on. */
 #define HKH_REV_LINES 8
 #define HKH_REV_MAX 1700
 #define HKH_REV_PRE 600
@@ -94,6 +96,8 @@ typedef struct {
     int ap_len[HKH_REV_AP], ap_pos[HKH_REV_AP];
     float kick_hp_x, kick_hp_y;
     float ret_lx, ret_ly, ret_rx, ret_ry;
+    hkh_svf ret_lp_l, ret_lp_r;
+    hkh_svf_coef ret_lp_c;
     int quiet;
 } hkh_reverb;
 

@@ -2,7 +2,7 @@
   "id": "piston",
   "name": "PISTON",
   "abbrev": "PISTON",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "description": "Live kick + hi-hat drum voice for industrial techno: analog/digital hybrid kick, four analog hat models, two 8-step pad sequencers",
   "author": "Hiro Ikezawa",
   "api_version": 2,
