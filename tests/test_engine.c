@@ -801,15 +801,16 @@ static void test_fx_tails(void) {
     printf("PASS: RUMBLE + REVERB at max decay to silence (no runaway)\n");
 }
 
-/* REVERB is a dark room: white noise sent in comes back with its top end
- * gone. Goertzel power of the return at 1 kHz vs 8 kHz, over the tail. */
+/* REVERB tone: the KICK's send is lowpassed (2 kHz, 24 dB/oct), so its click
+ * never rings in the room; the HAT's send is deliberately not. White noise
+ * into one send at a time; Goertzel power of the tail at 8 kHz vs 1 kHz. */
 static double goertzel(const float *x, int n, double hz) {
     double w = 2.0 * M_PI * hz / 44100.0, c = 2.0 * cos(w), s1 = 0, s2 = 0;
     for (int i = 0; i < n; ++i) { double s0 = x[i] + c * s1 - s2; s2 = s1; s1 = s0; }
     return s1 * s1 + s2 * s2 - c * s1 * s2;
 }
 
-static void test_reverb_tone(void) {
+static double reverb_tail_tilt(int kick) {
     static hkh_reverb rv;
     static float out[44100];
     hkh_reverb_init(&rv);
@@ -821,19 +822,24 @@ static void test_reverb_tone(void) {
             in = ((float)(seed >> 8) / 8388608.0f - 1.0f) * 0.5f;
         }
         float l, r;
-        hkh_reverb_tick(&rv, 0.0f, in, &l, &r);
+        hkh_reverb_tick(&rv, kick ? in : 0.0f, kick ? 0.0f : in, &l, &r);
         out[i] = l + r;
     }
-    double lo = 0, hi = 0;                            /* the tail, after the send */
+    double lo = 0, hi = 0;
     for (int w = 4410; w + 2048 <= 44100; w += 2048) {
         lo += goertzel(out + w, 2048, 1000.0);
         hi += goertzel(out + w, 2048, 8000.0);
     }
-    double db = 10.0 * log10(hi / lo);
-    printf("  reverb tail 8 kHz vs 1 kHz: %.1f dB\n", db);
+    return 10.0 * log10(hi / lo);
+}
+
+static void test_reverb_tone(void) {
+    double kick = reverb_tail_tilt(1), hat = reverb_tail_tilt(0);
+    printf("  reverb tail 8 kHz vs 1 kHz: kick %.1f dB, hat %.1f dB\n", kick, hat);
     fflush(stdout);
-    assert(db < -15.0);                              /* was -3.3 dB with no lowpass */
-    printf("PASS: REVERB return is lowpassed (dark tail)\n");
+    assert(kick < -30.0);                 /* was -3.3 dB with the send unfiltered */
+    assert(hat > -10.0);                  /* the hat's room keeps its air */
+    printf("PASS: REVERB lowpasses the kick's send, not the hat's\n");
 }
 
 /* Knob moves are ramped: no step in the waveform when a knob jumps. */

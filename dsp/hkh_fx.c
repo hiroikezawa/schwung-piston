@@ -222,8 +222,7 @@ float hkh_rumble_tick(hkh_rumble *r, float kick) {
 /* ---- REVERB -------------------------------------------------------------- */
 #define REV_IDLE (44100 * 3)
 #define REV_PREDELAY 530              /* 12 ms */
-#define REV_DAMP 0.30f                /* one-pole in the loop: ~2.5 kHz */
-#define REV_LP_HZ 3500.0f             /* return lowpass, 12 dB/oct */
+#define REV_KICK_LP_HZ 2000.0f        /* kick send lowpass, 24 dB/oct */
 
 void hkh_reverb_init(hkh_reverb *r) {
     memset(r, 0, sizeof(*r));
@@ -231,7 +230,7 @@ void hkh_reverb_init(hkh_reverb *r) {
     static const int aps[HKH_REV_AP] = {225, 341, 441, 556};
     for (int i = 0; i < HKH_REV_LINES; ++i) r->len[i] = lens[i];
     for (int i = 0; i < HKH_REV_AP; ++i) r->ap_len[i] = aps[i];
-    hkh_svf_set(&r->ret_lp_c, REV_LP_HZ, 0.70710678f);
+    hkh_svf_set(&r->kick_lp_c, REV_KICK_LP_HZ, 0.70710678f);   /* x2: 24 dB/oct */
     r->quiet = REV_IDLE;
 }
 
@@ -239,6 +238,7 @@ void hkh_reverb_tick(hkh_reverb *r, float kick_send, float hat_send, float *l, f
     float khp = kick_send - r->kick_hp_x + 0.9747f * r->kick_hp_y;   /* 180 Hz HP */
     r->kick_hp_x = kick_send;
     r->kick_hp_y = khp;
+    khp = hkh_svf_lp(&r->kick_lp[1], &r->kick_lp_c, hkh_svf_lp(&r->kick_lp[0], &r->kick_lp_c, khp));
     float in = khp + hat_send;
     if (fabsf(in) > 1e-6f) r->quiet = 0;
     if (r->quiet >= REV_IDLE) { *l = *rr = 0.0f; return; }
@@ -264,7 +264,7 @@ void hkh_reverb_tick(hkh_reverb *r, float kick_send, float hat_send, float *l, f
             }
     const float g = 0.88f * 0.35355339f;                          /* fb / sqrt(8) */
     for (int i = 0; i < HKH_REV_LINES; ++i) {
-        r->damp[i] += REV_DAMP * (h[i] * g - r->damp[i]);
+        r->damp[i] += 0.45f * (h[i] * g - r->damp[i]);
         r->line[i][r->pos[i]] = x * 0.35f + r->damp[i];
         if (++r->pos[i] >= r->len[i]) r->pos[i] = 0;
     }
@@ -274,8 +274,6 @@ void hkh_reverb_tick(hkh_reverb *r, float kick_send, float hat_send, float *l, f
     float yr = R - r->ret_rx + 0.9789f * r->ret_ry;
     r->ret_lx = L; r->ret_ly = yl;
     r->ret_rx = R; r->ret_ry = yr;
-    yl = hkh_svf_lp(&r->ret_lp_l, &r->ret_lp_c, yl);
-    yr = hkh_svf_lp(&r->ret_lp_r, &r->ret_lp_c, yr);
     if (!isfinite(yl) || !isfinite(yr)) {
         hkh_reverb_init(r);
         yl = yr = 0.0f;
