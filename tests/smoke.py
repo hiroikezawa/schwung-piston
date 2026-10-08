@@ -274,7 +274,7 @@ destroy(n2)
 write("h_step", 0, inst=m)
 write("h_reset", 1, inst=m)
 s_ = ui_state(m)
-assert s_[32:48] == [-1] * 16 and s_[4] == 0x4444 and s_[18 + 9] == 250 and s_[15] == 0
+assert s_[32:48] == [-1] * 16 and s_[4] == 0x4444 and s_[18 + 9] == 0 and s_[15] == 0
 transport["beat"] = -1.0
 destroy(m)
 

@@ -25,7 +25,7 @@ enum { MODE_KICK = 0, MODE_HAT = 1 };
 
 #define HKH_KICK_DEFAULT_PATTERN 0x1111u /* steps 1, 5 (9, 13) */
 #define HKH_HAT_DEFAULT_PATTERN  0x4444u /* steps 3, 7 (11, 15): the offbeat */
-#define HKH_HAT_CLOSED_DECAY     0.25f   /* "normal closed hat" on the DECAY knob */
+#define HKH_HAT_CLOSED_DECAY     0.0f    /* where DECAY starts and RESET returns */
 #define HKH_MOTION_NONE          (-1.0f)
 
 extern const char *const hkh_param_keys[P_COUNT];

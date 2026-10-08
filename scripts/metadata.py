@@ -18,7 +18,7 @@ engine = (root / "dsp" / "hkh_engine.c").read_text()
 keys = re.findall(r'"([kh]_[a-z]+)"', engine.split("hkh_param_keys[P_COUNT] = {", 1)[1].split("};", 1)[0])
 assert [p["key"] for p in params] == keys, ("module.json chain_params out of order with hkh_param_keys", keys)
 defaults_src = engine.split("hkh_param_defaults[P_COUNT] = {", 1)[1].split("};", 1)[0]
-defaults_src = defaults_src.replace("HKH_HAT_CLOSED_DECAY", "0.25f")
+defaults_src = defaults_src.replace("HKH_HAT_CLOSED_DECAY", "0.0f")
 defaults = [float(x.strip().rstrip("f")) for x in defaults_src.split(",") if x.strip()]
 assert [float(p["default"]) for p in params] == defaults, ("module.json defaults drift", defaults)
 for p in params:

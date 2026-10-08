@@ -50,7 +50,13 @@ static const hat_model MODELS[4] = {
 
 /* 0 = 14 ms (very tight), 0.25 = 44 ms (normal closed), 0.5 = 140 ms (loose),
  * 0.75 = 440 ms (open), 1 = 1.4 s (long open). */
+/* The DECAY knob covers the upper half of the hat's range: 0 % starts at a
+ * loose closed hat (the old 50 %), 100 % is the long open hat. Everything
+ * below works on this mapped value. */
+static float decay_span(float knob) { return 0.5f + 0.5f * hkh_clamp(knob, 0.0f, 1.0f); }
+
 float hkh_hat_t60(float decay) {
+    decay = decay_span(decay);
     return 0.014f * powf(100.0f, hkh_clamp(decay, 0.0f, 1.0f));
 }
 
@@ -64,7 +70,7 @@ void hkh_hat_init(hkh_hat *h, uint32_t seed) {
 /* Everything that depends on the knobs, per voice, per block. */
 static void voice_coefs(hkh_hat *h, hkh_hat_voice *v) {
     const hat_model *m = &MODELS[v->model];
-    float color = h->color, f = h->filter, d = v->decay;
+    float color = h->color, f = h->filter, d = decay_span(v->decay);
     float open = hkh_smoothstep(0.3f, 0.85f, d);
 
     /* COLOR / METAL: low = darker, noisier, softer resonance; high = the
@@ -94,7 +100,7 @@ static void voice_coefs(hkh_hat *h, hkh_hat_voice *v) {
     v->sat = m->sat;
     v->sat_norm = m->sat > 0.0f ? 1.0f / hkh_tanh(m->sat) : 1.0f;
     v->hold_period = m->decimate > 0 ? 1 + (int)lrintf((float)(m->decimate - 1) * (1.0f - color)) : 1;
-    v->env_coef = hkh_t60_coef(hkh_hat_t60(d));
+    v->env_coef = hkh_t60_coef(hkh_hat_t60(v->decay));   /* t60 maps the knob itself */
 }
 
 void hkh_hat_trigger(hkh_hat *h, int model, float velocity, float decay, int follows_base) {

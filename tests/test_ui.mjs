@@ -13,7 +13,7 @@ function mockDsp() {
         running: 0, step: -1, kp: 0x1111, hp: 0x4444, kmute: 0, hmute: 0, kfill: 0, hfill: 0,
         kmodel: 1, ksample: 0, hmodel: 1, mode: 0, rec: 0, len: 8,
         params: Object.fromEntries(PARAM_KEYS.map((k, i) =>
-            [k, [0.8, 0.25, 0.5, 0.15, 0.25, 0, 0, 0.7, 0.5, 0.25, 0.1, 0.2, 0.5, 0][i]])),
+            [k, [0.8, 0.25, 0.5, 0.15, 0.25, 0, 0, 0.7, 0.5, 0, 0.1, 0.2, 0.5, 0][i]])),
         motion: new Array(16).fill(-1),
     };
     d.set = (key, value) => {
@@ -27,7 +27,7 @@ function mockDsp() {
         case "k_fill": d.kfill = v; break;
         case "h_fill": d.hfill = v; break;
         case "k_reset": d.kp = 0x1111; d.kfill = 0; break;
-        case "h_reset": d.hp = 0x4444; d.hfill = 0; d.rec = 0; d.motion.fill(-1); d.params.h_decay = 0.25; break;
+        case "h_reset": d.hp = 0x4444; d.hfill = 0; d.rec = 0; d.motion.fill(-1); d.params.h_decay = 0; break;
         case "h_offbeat": d.hp = 0x4444; break;
         case "mode": d.mode = v; break;
         case "length": d.len = v; break;
@@ -41,7 +41,7 @@ function mockDsp() {
     d.uiState = () => [2, d.running, d.step, d.kp, d.hp, d.kfill ? 0xF1 : d.kp, d.hfill ? 0xFF : d.hp,
         d.kmute, d.hmute, d.kfill, d.hfill, d.kmodel, d.ksample, d.hmodel, d.mode, d.rec, 0, d.len,
         ...PARAM_KEYS.map((k) => Math.round(d.params[k] * 1000)),
-        ...d.motion.map((m) => (m < 0 ? -1 : Math.round(m * 1000))), 250, 206].join(",");
+        ...d.motion.map((m) => (m < 0 ? -1 : Math.round(m * 1000))), 250, 207].join(",");
     return d;
 }
 
@@ -111,7 +111,7 @@ const ds = parseUiState(defaultStateText());
 assert.equal(ds.kp, 0x1111);
 assert.equal(ds.hp, 0x4444);
 assert.equal(ds.len, 8);
-assert.equal(ds.params.h_decay, 0.25);
+assert.equal(ds.params.h_decay, 0);
 assert.deepEqual(ds.motion, new Array(16).fill(null));
 /* Step pads: 8 steps on the bottom row; 16 as row 3 = 1-8, row 4 = 9-16. */
 for (let i = 0; i < 8; i++) { assert.equal(stepPad(i, 8), noteAt(3, i)); assert.equal(padStep(3, i, 8), i); }
@@ -318,7 +318,7 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
     r.tap(noteAt(0, 7));
     r.touch(5, true);
     r.tick(4);
-    assert(r.printed.some((t) => t.startsWith("out -12dB") && t.includes("dsp 0.2.6")), r.printed.join("|"));
+    assert(r.printed.some((t) => t.startsWith("out -12dB") && t.includes("dsp 0.2.7")), r.printed.join("|"));
     r.touch(5, false);
 }
 

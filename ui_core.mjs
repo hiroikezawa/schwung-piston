@@ -139,7 +139,7 @@ export function parseUiState(text) {
 
 export function defaultState() {
     return parseUiState("2,0,-1,4369,17476,4369,17476,0,0,0,0,1,0,1,0,0,0,8," +
-        "800,250,500,150,250,0,0,700,500,250,100,200,500,0," +
+        "800,250,500,150,250,0,0,700,500,0,100,200,500,0," +
         Array(16).fill(-1).join(",") + ",0,0");
 }
 
@@ -151,7 +151,7 @@ const bit = (p, i) => ((p >> i) & 1) === 1;
  * a recorded chick -> shhh motion is visible on the pads. */
 function hatStepColor(s, i, focus, faint) {
     const d = s.motion[i] !== null ? s.motion[i] : s.params.h_decay;
-    const open = d >= 0.5;
+    const open = d >= 0.4;      /* 40 % on the knob and up reads as open */
     if (faint) return open ? C.OPEN_DIM : C.HAT_FAINT;
     if (open) return focus ? C.OPEN : C.OPEN_DIM;
     return focus ? C.HAT : C.HAT_DIM;
