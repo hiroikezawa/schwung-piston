@@ -168,10 +168,10 @@ void hkh_rumble_block(hkh_rumble *r, float amount, int frames) {
     /* The sub alone is inaudible on Move's speaker: the tail is driven AFTER
      * the lowpass so it grows harmonics, and those are kept up to ~1 kHz --
      * the classic "distorted reverb" rumble that reads on any speaker. */
-    r->grit_amt = 0.35f + 0.45f * a;
+    r->grit_amt = 0.6f + 0.6f * a;
     /* 24 dB/oct and low: enough upper harmonics for a small speaker to show
      * the rumble, none of the fizz that made it read as a bright reverb. */
-    hkh_svf_set(&r->grit_c, 500.0f - 150.0f * a, 0.6f);
+    hkh_svf_set(&r->grit_c, 900.0f - 200.0f * a, 0.6f);
     if (a > 0.001f) r->quiet = 0;
     for (int i = 0; i < HKH_RUMBLE_LINES; ++i)
         if (!isfinite(r->damp[i])) { memset(r->buf, 0, sizeof(r->buf)); memset(r->damp, 0, sizeof(r->damp)); break; }
@@ -206,7 +206,7 @@ float hkh_rumble_tick(hkh_rumble *r, float kick) {
     float y = hkh_tanh(r->sat * wet) / r->sat * 1.6f;
     y = hkh_svf_lp(&r->out1, &r->out_c, y);
     y = hkh_svf_lp(&r->out2, &r->out_c, y);
-    float g = hkh_svf_lp(&r->grit, &r->grit_c, hkh_tanh(y * 6.0f) * 0.35f);
+    float g = hkh_svf_lp(&r->grit, &r->grit_c, hkh_tanh(y * 10.0f) * 0.5f);
     g = hkh_svf_lp(&r->grit2, &r->grit_c, g);
     y += g * r->grit_amt;
     float hp = y - r->hp_x + 0.9957f * r->hp_y;     /* ~30 Hz highpass */
