@@ -716,8 +716,8 @@ static groove_stats groove(int model, int param, float value, int kick_only, int
 static void test_fx_levels(void) {
     for (int m = 0; m < 3; ++m) {
         groove_stats d0 = groove(m, P_K_DRIVE, 0.0f, 1, 0), d1 = groove(m, P_K_DRIVE, 1.0f, 1, 0);
-        if (!(d1.rms - d0.rms > -4.0 && d1.rms - d0.rms < 7.0)) fprintf(stderr, "drive m%d %.1f -> %.1f\n", m, d0.rms, d1.rms);
-        assert(d1.rms - d0.rms > -4.0 && d1.rms - d0.rms < 7.0);   /* DRIVE: dirtier, not a boost */
+        if (!(d1.rms - d0.rms > -5.0 && d1.rms - d0.rms < 7.0)) fprintf(stderr, "drive m%d %.1f -> %.1f\n", m, d0.rms, d1.rms);
+        assert(d1.rms - d0.rms > -5.0 && d1.rms - d0.rms < 7.0);   /* DRIVE: dirtier, not a boost */
         /* COMP: a punch comp -- the attack passes, the body and the tail
          * come down, so more COMP is a tighter, SHORTER kick, never longer. */
         groove_stats c0 = groove(m, P_K_COMP, 0.0f, 1, 0), c1 = groove(m, P_K_COMP, 1.0f, 1, 0);

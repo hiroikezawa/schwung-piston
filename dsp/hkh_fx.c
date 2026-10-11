@@ -71,8 +71,8 @@ void hkh_comp_block(hkh_comp *c, float amount, int frames) {
     /* The tail's time constant: 0 -> barely touched, 1 -> chopped short.
      * Geometric, so the knob is even to the ear. */
     float hold_ms, tau_ms;
-    if (c->hat) { hold_ms = 2.0f;  tau_ms = 250.0f * powf(12.0f / 250.0f, a); }
-    else        { hold_ms = 12.0f; tau_ms = 500.0f * powf(35.0f / 500.0f, a); }
+    if (c->hat) { hold_ms = 2.0f;  tau_ms = 125.0f * powf(6.0f / 125.0f, a); }
+    else        { hold_ms = 12.0f; tau_ms = 250.0f * powf(17.0f / 250.0f, a); }
     c->hold = (int)(hold_ms * 0.001f * HKH_SR);
     c->decay = expf(-1.0f / (tau_ms * 0.001f * HKH_SR));
     c->wet_step = ramp(c->wet, hkh_clamp(a * 4.0f, 0.0f, 1.0f), frames);
