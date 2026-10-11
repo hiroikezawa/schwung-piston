@@ -111,8 +111,8 @@ const JOG_TURN = 14;
 const JOG_CLICK = 3;
 const PAGES = 2;               /* 0: play, 1: settings (8 / 16 steps) */
 const SHIFT_CC = 49;
-const PAGE_TURN_MS = 250;      /* knob 8: a pause this long starts a new turn */
-const PAGE_DETENTS = 6;        /* knob 8: detents per further page within one turn */
+const PAGE_TURN_MS = 1000;     /* knob 8: a pause this long forgets a part-turn */
+export const PAGE_TICKS = 40;  /* knob 8: encoder counts per page (~120 degrees) */
 export const PRESET_FILE = "/data/UserData/schwung/piston-presets.json";
 const DECAY_KNOB = 2;          /* knob 3 */
 
@@ -636,16 +636,16 @@ export function createUi(host) {
              * gesture (a spin does not race through all three). */
             const d = decodeDelta(value), now = host.now();
             if (d === 0) return;
-            /* The first detent of a turn switches at once; while the knob
-             * keeps going, every PAGE_DETENTS more detents switch again. */
+            /* About a third of a turn per page: counts accumulate (both
+             * ways), and a pause or a change of direction starts over. */
             if (now - lastPageTurn >= PAGE_TURN_MS || Math.sign(d) !== Math.sign(pageAcc)) pageAcc = 0;
             lastPageTurn = now;
-            const before = pageAcc;
             pageAcc += d;
-            const pages = (x) => (x === 0 ? 0 : 1 + Math.floor((Math.abs(x) - 1) / PAGE_DETENTS));
-            const steps = pages(pageAcc) - pages(before);
-            for (let i = 0; i < steps; i++) nextMode(d > 0 ? 1 : -1);
-            if (steps) dirty = true;
+            while (Math.abs(pageAcc) >= PAGE_TICKS) {
+                nextMode(pageAcc > 0 ? 1 : -1);
+                pageAcc -= Math.sign(pageAcc) * PAGE_TICKS;
+            }
+            dirty = true;
             return;
         }
         if (s.mode === MODE_RACK) {
