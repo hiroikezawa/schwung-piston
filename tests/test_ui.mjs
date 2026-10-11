@@ -48,7 +48,7 @@ function mockDsp() {
     d.uiState = () => [3, d.running, d.step, d.kp, d.hp, d.kfill ? 0xF1 : d.kp, d.hfill ? 0xFF : d.hp,
         d.kmute, d.hmute, d.kfill, d.hfill, d.kmodel, d.ksample, d.hmodel, d.mode, d.rec, 0, d.len,
         ...PARAM_KEYS.map((k) => Math.round(d.params[k] * 1000)),
-        ...d.motion.map((m) => (m < 0 ? -1 : Math.round(m * 1000))), 250, 400,
+        ...d.motion.map((m) => (m < 0 ? -1 : Math.round(m * 1000))), 250, 401,
         d.rackMask, d.rackMute, ...d.rp, ...d.rv.map((x) => Math.round(x * 1000))].join(",");
     return d;
 }
@@ -336,7 +336,7 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
     r.page(); r.page();       /* HAT -> RACK -> KICK */
     r.touch(5, true);
     r.tick(4);
-    assert(r.printed.some((t) => t.startsWith("out -12dB") && t.includes("dsp 0.4.0")), r.printed.join("|"));
+    assert(r.printed.some((t) => t.startsWith("out -12dB") && t.includes("dsp 0.4.1")), r.printed.join("|"));
     r.touch(5, false);
 }
 
@@ -444,7 +444,13 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
 {
     const r = rig();
     r.clear();
-    r.turn(7, 1); r.turn(7, 1); r.turn(7, 1);     /* one fast spin = one page */
+    r.turn(7, 1);                                 /* the first detent switches */
+    assert.equal(r.ui.state.mode, MODE_HAT);
+    for (let i = 0; i < 5; i++) r.turn(7, 1);     /* still the same turn */
+    assert.equal(r.ui.state.mode, MODE_HAT);
+    r.turn(7, 1);                                 /* 6 more detents: next page */
+    assert.equal(r.ui.state.mode, MODE_RACK);
+    r.page(-1);
     assert.equal(r.ui.state.mode, MODE_HAT);
     r.page(-1);
     assert.equal(r.ui.state.mode, 0);

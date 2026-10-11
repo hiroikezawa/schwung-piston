@@ -111,7 +111,8 @@ const JOG_TURN = 14;
 const JOG_CLICK = 3;
 const PAGES = 2;               /* 0: play, 1: settings (8 / 16 steps) */
 const SHIFT_CC = 49;
-const PAGE_TURN_MS = 300;      /* knob 8: quiet this long before the next page */
+const PAGE_TURN_MS = 250;      /* knob 8: a pause this long starts a new turn */
+const PAGE_DETENTS = 6;        /* knob 8: detents per further page within one turn */
 export const PRESET_FILE = "/data/UserData/schwung/piston-presets.json";
 const DECAY_KNOB = 2;          /* knob 3 */
 
@@ -342,6 +343,7 @@ export function createUi(host) {
     const ui = { held: new Set(), sel: null, presets: null, preset: [-1, -1], rackHeld: -1 };
     let shiftHeld = false;
     let lastPageTurn = -1e9;
+    let pageAcc = 0;
     let flash = "";                    /* a one-line confirmation, e.g. SAVED 3 */
     let flashUntil = 0;
     const selHeld = { analog: false, digital: false, model: false };
@@ -620,11 +622,16 @@ export function createUi(host) {
              * gesture (a spin does not race through all three). */
             const d = decodeDelta(value), now = host.now();
             if (d === 0) return;
-            const quiet = now - lastPageTurn >= PAGE_TURN_MS;
+            /* The first detent of a turn switches at once; while the knob
+             * keeps going, every PAGE_DETENTS more detents switch again. */
+            if (now - lastPageTurn >= PAGE_TURN_MS || Math.sign(d) !== Math.sign(pageAcc)) pageAcc = 0;
             lastPageTurn = now;
-            if (!quiet) return;
-            nextMode(d > 0 ? 1 : -1);
-            dirty = true;
+            const before = pageAcc;
+            pageAcc += d;
+            const pages = (x) => (x === 0 ? 0 : 1 + Math.floor((Math.abs(x) - 1) / PAGE_DETENTS));
+            const steps = pages(pageAcc) - pages(before);
+            for (let i = 0; i < steps; i++) nextMode(d > 0 ? 1 : -1);
+            if (steps) dirty = true;
             return;
         }
         if (s.mode === MODE_RACK) {
