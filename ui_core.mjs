@@ -398,6 +398,12 @@ export function createUi(host) {
         touched = -1;
     }
 
+    /* Shift: the shim does not forward CC 49 to a module's screen, so the
+     * host's own shift flag is asked; the CC is still honoured if it comes. */
+    function isShift() {
+        return shiftHeld || (host.shiftHeld ? host.shiftHeld() : false);
+    }
+
     function loadPresets() {
         if (ui.presets) return;
         ui.presets = parsePresets(host.readFile ? host.readFile(PRESET_FILE) : null);
@@ -413,7 +419,7 @@ export function createUi(host) {
         loadPresets();
         const hat = s.mode === MODE_HAT, v = hat ? 1 : 0;
         const key = hat ? "h_preset" : "k_preset";
-        if (shiftHeld) {
+        if (isShift()) {
             const text = host.getParam(key);
             if (typeof text !== "string" || !text) { say("SAVE FAILED"); return; }
             const next = ui.presets.map((a) => a.slice());
@@ -477,6 +483,14 @@ export function createUi(host) {
         }
         const pad = rackPadAt(row, col);
         if (pad < 0 || !down) return;
+        if (isShift()) {
+            /* Shift + pad: mute / unmute, no hold, no audition. */
+            const on = ((s.rackMute >> pad) & 1) ? 0 : 1;
+            set("r_mute", `${pad}:${on}`);
+            s.rackMute ^= (1 << pad);
+            readDue = true;
+            return;
+        }
         ui.rackHeld = pad;
         if (!s.running) set("r_trig", pad);
     }
@@ -635,20 +649,9 @@ export function createUi(host) {
             return;
         }
         if (s.mode === MODE_RACK) {
-            /* Hold a rack pad: knob 1 = its volume, knob 2 = its mute
-             * (clockwise mutes, counter-clockwise unmutes). */
+            /* Hold a rack pad: knob 1 = its volume. */
             const pad = ui.rackHeld, d = decodeDelta(value);
             if (pad < 0 || d === 0) return;
-            if (knob === 1) {
-                const on = d > 0 ? 1 : 0;
-                if ((((s.rackMute >> pad) & 1) === 1) !== (on === 1)) {
-                    set("r_mute", `${pad}:${on}`);
-                    s.rackMute ^= (1 << pad);
-                    readDue = true;
-                    dirty = true;
-                }
-                return;
-            }
             if (knob !== 0) return;
             const now = host.now();
             const step = knobStep(now - lastTurn[knob]);
@@ -886,7 +889,7 @@ export function createUi(host) {
         const v = s.rv[held];
         const pct = `VOL ${Math.round(v * 100)}%`;
         g.print(0, 50, pct, 1);
-        g.print(0, 40, `k1 VOL  k2 MUTE ${muted ? "ON" : "OFF"}`, 1);
+        g.print(0, 40, `k1 VOL  SHIFT+PAD MUTE`, 1);
         g.drawRect(52, 50, 76, 7, 1);
         g.fillRect(54, 52, Math.round(72 * v), 3, 1);
     }

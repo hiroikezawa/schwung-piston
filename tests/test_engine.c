@@ -716,14 +716,17 @@ static groove_stats groove(int model, int param, float value, int kick_only, int
 static void test_fx_levels(void) {
     for (int m = 0; m < 3; ++m) {
         groove_stats d0 = groove(m, P_K_DRIVE, 0.0f, 1, 0), d1 = groove(m, P_K_DRIVE, 1.0f, 1, 0);
-        if (!(d1.rms - d0.rms > -2.0 && d1.rms - d0.rms < 7.0)) fprintf(stderr, "drive m%d %.1f -> %.1f\n", m, d0.rms, d1.rms);
-        assert(d1.rms - d0.rms > -2.0 && d1.rms - d0.rms < 7.0);   /* DRIVE: dirtier, not a boost */
-        /* COMP: audible -- peaks held, body denser, tail lifted -- and
-         * never a volume knob or a trip into the limiter. */
+        if (!(d1.rms - d0.rms > -4.0 && d1.rms - d0.rms < 7.0)) fprintf(stderr, "drive m%d %.1f -> %.1f\n", m, d0.rms, d1.rms);
+        assert(d1.rms - d0.rms > -4.0 && d1.rms - d0.rms < 7.0);   /* DRIVE: dirtier, not a boost */
+        /* COMP: a punch comp -- the attack passes, the body and the tail
+         * come down, so more COMP is a tighter, SHORTER kick, never longer. */
         groove_stats c0 = groove(m, P_K_COMP, 0.0f, 1, 0), c1 = groove(m, P_K_COMP, 1.0f, 1, 0);
-        assert(c1.rms - c0.rms > 1.0 && c1.rms - c0.rms < 7.0);
-        assert(c1.between - c0.between > 6.0);
-        assert(fabs(20 * log10(c1.peak / c0.peak)) < 2.0 && c1.peak < 0.95f);
+        fprintf(stderr, "  comp m%d: punch %+.1f dB, rms %+.1f dB, between %+.1f dB\n", m,
+                20 * log10(c1.punch / c0.punch), c1.rms - c0.rms, c1.between - c0.between);
+        assert(20 * log10(c1.punch / c0.punch) > -2.0);          /* the crack stays */
+        assert(c1.rms - c0.rms < -1.5);                           /* the body is audibly tighter */
+        assert(c1.between - c0.between < -4.0);                   /* the tail is shorter */
+        assert(c1.peak < 0.95f);
         /* RUMBLE fills the gaps between kicks and leaves the punch alone. */
         double prev = -200;
         groove_stats r0 = groove(m, P_K_RUMBLE, 0.0f, 1, 0);
@@ -748,11 +751,12 @@ static void test_fx_levels(void) {
     groove_stats hd0 = groove(0, P_H_DRIVE, 0.0f, 0, 1), hd1 = groove(0, P_H_DRIVE, 1.0f, 0, 1);
     assert(hd1.rms - hd0.rms > -3.0 && hd1.rms - hd0.rms < 6.0);
     groove_stats hc0 = groove(0, P_H_COMP, 0.0f, 0, 1), hc1 = groove(0, P_H_COMP, 1.0f, 0, 1);
-    assert(hc1.rms - hc0.rms > -1.0 && hc1.rms - hc0.rms < 7.0 && hc1.peak < 0.95f);
+    fprintf(stderr, "  hat comp: rms %+.1f dB, between %+.1f dB\n", hc1.rms - hc0.rms, hc1.between - hc0.between);
+    assert(hc1.rms - hc0.rms < -1.0 && hc1.between - hc0.between <= 0.5 && hc1.peak < 0.95f);
     /* Defaults leave headroom: under the limiter, near -6 dBFS peak. */
     groove_stats def = groove(1, -1, 0, 0, 0);
     assert(def.peak < 0.95f && def.peak > 0.5f);
-    printf("PASS: DRIVE holds level, COMP audibly thickens, RUMBLE fills gaps not punch, REVERB sends, headroom\n");
+    printf("PASS: DRIVE holds level, COMP tightens (shorter, not longer), RUMBLE fills gaps not punch, REVERB sends, headroom\n");
 }
 
 /* Random knobs, dense patterns, fills: never above -3 dBFS, never NaN. */

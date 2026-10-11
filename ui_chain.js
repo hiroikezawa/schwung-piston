@@ -24,6 +24,7 @@ const core = createUi({
     padSnapshot: () => has("shadow_get_pad_led_snapshot") ? shadow_get_pad_led_snapshot() : null,
     displayOn: () => !has("shadow_get_display_mode") || shadow_get_display_mode() === 1,
     now: () => Date.now(),
+    shiftHeld: () => has("shadow_get_shift_held") && shadow_get_shift_held() === 1,
     readFile: (path) => has("host_read_file") ? host_read_file(path) : null,
     writeFile: (path, text) => has("host_write_file") ? host_write_file(path, text) !== false : false,
     gfx: {

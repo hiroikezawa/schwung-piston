@@ -48,7 +48,7 @@ function mockDsp() {
     d.uiState = () => [3, d.running, d.step, d.kp, d.hp, d.kfill ? 0xF1 : d.kp, d.hfill ? 0xFF : d.hp,
         d.kmute, d.hmute, d.kfill, d.hfill, d.kmodel, d.ksample, d.hmodel, d.mode, d.rec, 0, d.len,
         ...PARAM_KEYS.map((k) => Math.round(d.params[k] * 1000)),
-        ...d.motion.map((m) => (m < 0 ? -1 : Math.round(m * 1000))), 250, 401,
+        ...d.motion.map((m) => (m < 0 ? -1 : Math.round(m * 1000))), 250, 500,
         d.rackMask, d.rackMute, ...d.rp, ...d.rv.map((x) => Math.round(x * 1000))].join(",");
     return d;
 }
@@ -58,7 +58,7 @@ function rig() {
     const r = {
         dsp, sets: [], leds: {}, ledLog: [], padBlock: [], on: true, t: 1000,
         snapshot: Object.fromEntries(Array.from({ length: 32 }, (_, i) => [String(68 + i), 45])),
-        ledFail: new Set(), printed: [], files: {},
+        ledFail: new Set(), printed: [], files: {}, hostShift: false,
     };
     r.host = {
         setParam: (k, v) => { r.sets.push([k, v]); dsp.set(k, v); return true; },
@@ -66,6 +66,7 @@ function rig() {
             : k === "k_preset" ? `${dsp.kmodel},${dsp.ksample},${dsp.kp},0.8,0.25,0.5,0.15,0.25,0,0`
             : k === "h_preset" ? `${dsp.hmodel},${dsp.hp},0.7,0.5,0,0.1,0.2,0.5,0,` + Array(16).fill(-1).join(",")
             : null),
+        shiftHeld: () => r.hostShift,
         readFile: (path) => (path in r.files ? r.files[path] : null),
         writeFile: (path, text) => { r.files[path] = text; return true; },
         padBlock: (on) => r.padBlock.push(on),
@@ -336,7 +337,7 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
     r.page(); r.page();       /* HAT -> RACK -> KICK */
     r.touch(5, true);
     r.tick(4);
-    assert(r.printed.some((t) => t.startsWith("out -12dB") && t.includes("dsp 0.4.1")), r.printed.join("|"));
+    assert(r.printed.some((t) => t.startsWith("out -12dB") && t.includes("dsp 0.5.0")), r.printed.join("|"));
     r.touch(5, false);
 }
 
@@ -345,7 +346,7 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
     const r = rig();
     r.clear();
     r.dsp.kmodel = 2; r.dsp.kp = 0x00F0;
-    r.shift(true); r.tap(noteAt(1, 2)); r.shift(false);
+    r.hostShift = true; r.tap(noteAt(1, 2)); r.hostShift = false;
     const saved = parsePresets(r.files[PRESET_FILE]);
     assert(saved[0][2] && saved[0][2].startsWith("2,0,240"), r.files[PRESET_FILE]);
     assert.equal(saved[1][2], null, "the hat's presets are separate");
@@ -421,15 +422,14 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
     r.release(noteAt(3, 0));
     assert.deepEqual(r.sets.filter((x) => x[0] !== "r_trig"), [["r_step", "24:7"]]);
     assert.equal(r.ui.state.mode, MODE_RACK);
-    /* Hold + knob 2: clockwise mutes (once), counter-clockwise unmutes. */
-    r.press(noteAt(0, 2));
+    /* Shift + pad: mute toggle, no audition; knob 2 does nothing. */
     r.clear();
-    r.turn(1, 3); r.turn(1, 3); r.turn(4, 3);
+    r.hostShift = true; r.tap(noteAt(0, 2)); r.hostShift = false;
     assert.deepEqual(r.sets, [["r_mute", "2:1"]]);
-    r.release(noteAt(0, 2));
-    r.clear();
-    r.mute(true); r.tap(noteAt(0, 3)); r.mute(false);
-    assert(!r.sets.some(([k]) => k === "r_mute"), "Mute button does nothing");
+    r.press(noteAt(0, 3)); r.clear();
+    r.turn(1, 3);
+    r.release(noteAt(0, 3));
+    assert(!r.sets.some(([k]) => k === "r_mute"), "knob 2 no longer mutes");
     r.tick();
     assert.equal(r.leds[noteAt(0, 2)], C.RACK_MUTED);
     r.tick(2);

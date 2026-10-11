@@ -55,90 +55,48 @@ float hkh_drive_tick(hkh_drive *d, float x) {
 void hkh_comp_init(hkh_comp *c, int hat) {
     memset(c, 0, sizeof(*c));
     c->hat = hat;
+    c->rel_fast = expf(-1.0f / (0.005f * HKH_SR));
+    c->att_slow = expf(-1.0f / (0.004f * HKH_SR));
+    c->rel_slow = expf(-1.0f / (0.080f * HKH_SR));
+    c->since = 1 << 30;
+    c->shape = 1.0f;
     hkh_comp_block(c, 0.0f, 1);
-    c->thr_db += c->thr_step; c->slope += c->slope_step;
-    c->makeup_db += c->makeup_step; c->wet += c->wet_step;
-    c->thr_step = c->slope_step = c->makeup_step = c->wet_step = 0.0f;
-}
-
-/* The static curve: gain change in dB for a detector level, soft knee. */
-static float comp_gr(const hkh_comp *c, float level_db) {
-    float over = level_db - c->thr_db;
-    if (2.0f * over < -c->knee) return 0.0f;
-    if (2.0f * fabsf(over) <= c->knee) {
-        float t = over + 0.5f * c->knee;
-        return -c->slope * t * t / (2.0f * c->knee);
-    }
-    return -c->slope * over;
+    c->wet += c->wet_step;
+    c->wet_step = 0.0f;
 }
 
 void hkh_comp_block(hkh_comp *c, float amount, int frames) {
     c->amount = smooth_knob(c->amount, amount);
-    float a = c->amount, ratio, att_ms, rel_ms, thr;
-    if (c->hat) {
-        thr = -6.0f - 24.0f * a;
-        ratio = 1.0f + 5.0f * a;
-        att_ms = 2.5f - 1.5f * a;
-        rel_ms = 30.0f + 70.0f * a;
-    } else {
-        /* Attack stays >= 4 ms so the kick's click passes; release grows so
-         * heavy settings lift the tail (the "pump"). */
-        /* Short release: the gain recovers inside the tail, so the knob is
-         * heard as the kick's body swelling and sustaining ("fat"), not as
-         * a quieter kick. */
-        thr = -3.0f - 33.0f * a;
-        ratio = 1.0f + 11.0f * a;
-        att_ms = 10.0f - 9.5f * a;          /* heavy = the click is squashed too */
-        rel_ms = 120.0f - 60.0f * a;
-    }
-    /* The static curve is evaluated with the TARGET settings for makeup, and
-     * the three values the per-sample gain depends on are then ramped. */
-    hkh_comp target = *c;
-    target.thr_db = thr;
-    target.slope = 1.0f - 1.0f / ratio;
-    target.knee = c->knee = 6.0f;
-    c->att = expf(-1.0f / (att_ms * 0.001f * HKH_SR));
-    c->rel = expf(-1.0f / (rel_ms * 0.001f * HKH_SR));
-    /* Auto makeup: give back what the curve takes at the level the peak
-     * detector actually sits at through a hit (just under the voice's peak,
-     * because the release holds it there), so the knob changes density and
-     * punch, not volume. Tails below that level come up. */
-    float makeup = -comp_gr(&target, c->hat ? -6.0f : -2.0f);
-    c->thr_step = ramp(c->thr_db, thr, frames);
-    c->slope_step = ramp(c->slope, target.slope, frames);
-    c->makeup_step = ramp(c->makeup_db, makeup, frames);
-    /* The detector is still catching up during the first milliseconds of a
-     * hit, where the curve takes nothing and makeup would be applied raw:
-     * +15 dB on the transient, which then drags the output limiter down for
-     * the whole hit. Cap the NET gain so the attack is punchier, not louder. */
-    c->max_gain_db = c->hat ? 9.0f : 14.0f;
-    c->wet_step = ramp(c->wet, hkh_clamp(a * 20.0f, 0.0f, 1.0f), frames);
+    float a = c->amount;
+    /* The tail's time constant: 0 -> barely touched, 1 -> chopped short.
+     * Geometric, so the knob is even to the ear. */
+    float hold_ms, tau_ms;
+    if (c->hat) { hold_ms = 2.0f;  tau_ms = 250.0f * powf(12.0f / 250.0f, a); }
+    else        { hold_ms = 12.0f; tau_ms = 500.0f * powf(35.0f / 500.0f, a); }
+    c->hold = (int)(hold_ms * 0.001f * HKH_SR);
+    c->decay = expf(-1.0f / (tau_ms * 0.001f * HKH_SR));
+    c->wet_step = ramp(c->wet, hkh_clamp(a * 4.0f, 0.0f, 1.0f), frames);
 }
 
 float hkh_comp_tick(hkh_comp *c, float x) {
-    c->thr_db += c->thr_step;
-    c->slope += c->slope_step;
-    c->makeup_db += c->makeup_step;
     c->wet += c->wet_step;
     float ax = fabsf(x);
-    int rising = ax > c->env;
-    /* Peak detector: instant attack (a kick's first cycle is already its
-     * loudest, and makeup must never ride it), smoothed release. */
-    c->env = rising ? ax : c->rel * c->env + (1.0f - c->rel) * ax;
-    if (c->wet <= 0.0f && c->wet_step <= 0.0f) { c->wet = 0.0f; c->phase = 0; return x; }
-    if (rising) c->phase = 0;         /* recompute at once on a rise */
-    if (c->phase-- <= 0) {
-        c->phase = 3;
-        /* 20*log10(x) as 8.6859*ln(x): log10f binds GLIBC_2.43 on current
-         * toolchains, which Move's glibc 2.34 does not have (check_abi.py). */
-        float gr = comp_gr(c, 8.6858896f * logf(c->env + 1e-6f));
-        float target = expf(fminf(gr + c->makeup_db, c->max_gain_db) * 0.11512925f);  /* dB -> gain */
-        /* Gain DOWN at once (no overshoot on the attack), back UP smoothly. */
-        if (c->gain <= 0.0f || target < c->gain) { c->gain = target; c->gain_step = 0.0f; }
-        else c->gain_step = (target - c->gain) * 0.25f;
+    c->env_fast = ax > c->env_fast ? ax : c->env_fast * c->rel_fast;
+    float ks = ax > c->env_slow ? c->att_slow : c->rel_slow;
+    c->env_slow = ax + (c->env_slow - ax) * ks;
+    /* An onset: the fast envelope jumps well above the slow one. */
+    if (c->env_fast > 0.02f && c->env_fast > 2.0f * c->env_slow + 1e-4f && c->since > c->hold) {
+        c->since = 0;
     }
-    c->gain += c->gain_step;
-    return x + (x * c->gain - x) * c->wet;
+    if (c->since < (1 << 30)) ++c->since;
+    if (c->since <= c->hold) {
+        /* back to unity within the hold (it was mid-tail on a retrigger) */
+        c->shape += (1.0f - c->shape) * 0.05f;
+    } else {
+        c->shape *= c->decay;
+    }
+    if (c->wet <= 0.0f && c->wet_step <= 0.0f) { c->wet = 0.0f; return x; }
+    return x + (x * c->shape - x) * c->wet;
 }
 
 /* ---- RUMBLE -------------------------------------------------------------- */

@@ -29,21 +29,23 @@ void hkh_drive_init(hkh_drive *d, float pre_max, float lp_max, float lp_min);
 void hkh_drive_block(hkh_drive *d, float amount, int frames);
 float hkh_drive_tick(hkh_drive *d, float x);
 
-/* COMP: 0 = off, 1 = heavy. Threshold, ratio, attack, release and makeup all
- * follow the one knob; makeup is automatic and deliberately partial so the
- * knob adds density, not volume. Kick and hat get different time constants
- * (the kick keeps its click; the hat clamps faster). */
+/* COMP: 0 = off, 1 = tightest. A punch processor rather than a level
+ * compressor: every hit's transient passes untouched for a short HOLD, then
+ * the body and tail are pulled down along an exponential whose time constant
+ * shrinks as the knob goes up. It works per HIT (an onset detector restarts
+ * it), not per level, so a long 808 tail can never keep it clamped into the
+ * next kick -- and nothing is ever lifted: more COMP = the same crack, a
+ * tighter, shorter sound. Kick and hat get different times. */
 typedef struct {
     float amount;
     int hat;
-    float env;
-    float thr_db, slope, knee, att, rel, makeup_db, max_gain_db, wet;
-    float thr_step, slope_step, makeup_step, wet_step;   /* per-sample ramps */
-    /* The gain computer (a log and an exp) runs every 4th sample and the
-     * gain is interpolated between: the fastest attack is 4 ms, so the 90 us
-     * of control latency is inaudible and the comp costs a quarter. */
-    float gain, gain_step;
-    int phase;
+    float env_fast, env_slow;  /* onset detector */
+    float rel_fast, att_slow, rel_slow;
+    int since;                 /* samples since the last onset */
+    int hold;                  /* samples the transient passes untouched */
+    float decay;               /* per-sample factor of the tail envelope */
+    float shape;               /* the tail envelope, 1 -> 0 */
+    float wet, wet_step;
 } hkh_comp;
 
 void hkh_comp_init(hkh_comp *c, int hat);
