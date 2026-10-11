@@ -16,7 +16,7 @@ function mockDsp() {
         params: Object.fromEntries(PARAM_KEYS.map((k, i) =>
             [k, [0.8, 0.25, 0.5, 0.15, 0.25, 0, 0, 0.7, 0.5, 0, 0.1, 0.2, 0.5, 0][i]])),
         motion: new Array(16).fill(-1),
-        rackMask: 0xFFFFFF & ~(1 << 4), rackMute: 0, rp: new Array(24).fill(0), rv: new Array(24).fill(0.8),
+        rackMask: 0xFFFFFFFF & ~(1 << 4), rackMute: 0, rp: new Array(32).fill(0), rv: new Array(32).fill(0.8),
     };
     d.set = (key, value) => {
         const v = Number(value);
@@ -48,7 +48,7 @@ function mockDsp() {
     d.uiState = () => [3, d.running, d.step, d.kp, d.hp, d.kfill ? 0xF1 : d.kp, d.hfill ? 0xFF : d.hp,
         d.kmute, d.hmute, d.kfill, d.hfill, d.kmodel, d.ksample, d.hmodel, d.mode, d.rec, 0, d.len,
         ...PARAM_KEYS.map((k) => Math.round(d.params[k] * 1000)),
-        ...d.motion.map((m) => (m < 0 ? -1 : Math.round(m * 1000))), 250, 301,
+        ...d.motion.map((m) => (m < 0 ? -1 : Math.round(m * 1000))), 250, 400,
         d.rackMask, d.rackMute, ...d.rp, ...d.rv.map((x) => Math.round(x * 1000))].join(",");
     return d;
 }
@@ -96,6 +96,7 @@ function rig() {
     r.touch = (knob, down) => r.ui.onMidi(down ? [0x90, knob, 127] : [0x90, knob, 0]);
     r.shift = (down) => r.ui.onMidi([0xB0, 49, down ? 127 : 0]);
     r.mute = (down) => r.ui.onMidi([0xB0, 88, down ? 127 : 0]);
+    r.page = (dir = 1) => { r.t += 400; r.turn(7, dir); };
     r.last = () => r.sets[r.sets.length - 1];
     r.keys = () => r.sets.map((s) => s[0]);
     r.clear = () => { r.sets.length = 0; };
@@ -142,7 +143,7 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
 {
     const r = rig();
     r.tick();
-    assert.equal(r.leds[noteAt(0, 7)], C.KICK, "top-right: KICK");
+    assert.equal(r.leds[noteAt(0, 7)], C.OFF, "top-right pad is free now");
     assert.equal(r.leds[noteAt(3, 0)], C.KICK, "kick step 1 on the bottom row");
     assert.equal(r.leds[noteAt(3, 2)], C.OFF);
     for (let c = 0; c < 8; c++) assert.equal(r.leds[noteAt(2, c)], C.OFF, "row 3 unused at 8 steps");
@@ -155,10 +156,9 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
     assert.deepEqual(r.sets, [["k_step", "2"]]);
     /* Switch: the same pads now belong to the hat. */
     r.clear();
-    r.tap(noteAt(0, 7));
+    r.page();
     assert.deepEqual(r.sets, [["mode", "1"]]);
     r.tick();
-    assert.equal(r.leds[noteAt(0, 7)], C.HAT);
     assert.equal(r.leds[noteAt(3, 2)], C.HAT, "hat step 3");
     assert.equal(r.leds[noteAt(3, 0)], C.OFF, "no kick on the hat surface");
     assert.equal(r.leds[noteAt(0, 5)], C.MODEL_DIM);
@@ -172,11 +172,10 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
         ["h_shuffle", "1"], ["h_random", "1"], ["h_offbeat", "1"]]);
     /* KICK -> HAT -> RACK -> KICK */
     r.clear();
-    r.tap(noteAt(0, 7));
+    r.page();
     r.tick();
     assert.equal(r.ui.state.mode, MODE_RACK);
-    assert.equal(r.leds[noteAt(0, 7)], C.RACK);
-    r.tap(noteAt(0, 7));
+    r.page();
     r.tap(noteAt(0, 0));
     assert.deepEqual(r.sets, [["mode", "2"], ["mode", "0"], ["k_mute", "1"]], "row 1 follows the voice");
 }
@@ -198,7 +197,7 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
     r.release(noteAt(0, 6));
     r.tap(noteAt(3, 3));                           /* a step again */
     assert.deepEqual(r.sets, [["k_model_pick", "2"], ["k_sample_pick", "3"], ["k_step", "3"]]);
-    r.tap(noteAt(0, 7));
+    r.page();
     r.clear();
     r.press(noteAt(0, 5));                         /* MODEL held (hat) */
     r.tap(noteAt(3, 3));
@@ -245,7 +244,7 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
     assert.deepEqual(r.last(), ["k_fill", "0"]);
     /* Switching voice while holding FILL lets it go. */
     r.press(noteAt(0, 4));
-    r.tap(noteAt(0, 7));
+    r.page();
     assert(r.sets.some((x, i) => x[0] === "k_fill" && x[1] === "0" && i > 0));
     r.clear();
     r.tick(20);
@@ -258,7 +257,7 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
     r.clear();
     r.touch(2, true); r.touch(2, false);           /* KICK: no recording */
     assert(!r.keys().includes("h_motion_rec"));
-    r.tap(noteAt(0, 7));
+    r.page();
     r.clear();
     r.touch(2, true);
     assert.deepEqual(r.last(), ["h_motion_rec", "1"]);
@@ -268,7 +267,7 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
     assert.equal(k[k.length - 2], "h_decay");
     assert.deepEqual(r.last(), ["h_motion_rec", "0"]);
     r.touch(2, true);
-    r.tap(noteAt(0, 7));                           /* switch away mid-touch */
+    r.page();                           /* switch away mid-touch */
     assert(!r.ui.recording);
 }
 
@@ -323,7 +322,7 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
     const r = rig();
     r.tick();
     assert(r.printed.includes("KICK"));
-    r.tap(noteAt(0, 7));
+    r.page();
     r.tick();
     assert(r.printed.includes("HAT"));
     r.press(noteAt(0, 5));
@@ -334,10 +333,10 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
     r.tick(2);
     assert(r.printed.includes("REC"));
     r.touch(2, false);
-    r.tap(noteAt(0, 7)); r.tap(noteAt(0, 7));       /* HAT -> RACK -> KICK */
+    r.page(); r.page();       /* HAT -> RACK -> KICK */
     r.touch(5, true);
     r.tick(4);
-    assert(r.printed.some((t) => t.startsWith("out -12dB") && t.includes("dsp 0.3.1")), r.printed.join("|"));
+    assert(r.printed.some((t) => t.startsWith("out -12dB") && t.includes("dsp 0.4.0")), r.printed.join("|"));
     r.touch(5, false);
 }
 
@@ -359,7 +358,7 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
     assert.equal(r.ui.state.kmodel, 2);
     assert.equal(r.ui.state.kp, 0x00F0);
     /* Hat surface: its own eight, the kick's slot 3 is empty there. */
-    r.tap(noteAt(0, 7));
+    r.page();
     r.tick();
     assert.equal(r.leds[noteAt(1, 2)], C.OFF);
     r.clear();
@@ -381,22 +380,22 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
 /* ---- the rack: 6 x 4 pads, hold for steps, Mute+pad, knob = volume -------- */
 {
     assert.equal(rackPadAt(0, 0), 0);
-    assert.equal(rackPadAt(3, 5), 23);
-    assert.equal(rackPadAt(0, 6), -1);
+    assert.equal(rackPadAt(3, 7), 31);
+    assert.equal(rackPadAt(0, 7), 7);
     assert.deepEqual(padAt(rackStepPad(0, 0, 8)), { row: 2, col: 0 }, "top pad: steps below");
-    assert.deepEqual(padAt(rackStepPad(12, 0, 8)), { row: 0, col: 0 }, "bottom pad: steps above");
-    assert.deepEqual(padAt(rackStepPad(12, 15, 16)), { row: 1, col: 7 });
+    assert.deepEqual(padAt(rackStepPad(16, 0, 8)), { row: 0, col: 0 }, "bottom pad: steps above");
+    assert.deepEqual(padAt(rackStepPad(31, 15, 16)), { row: 1, col: 7 });
     assert.equal(rackStepPad(0, 8, 8), -1);
     assert.equal(rackPadStep(0, 3, 2, 8), -1, "second row unused at 8 steps");
     assert.equal(rackPadStep(0, 3, 2, 16), 10);
 
     const r = rig();
-    r.tap(noteAt(0, 7)); r.tap(noteAt(0, 7));      /* -> RACK */
+    r.page(); r.page();      /* -> RACK */
     r.tick();
     assert.equal(r.ui.state.mode, MODE_RACK);
     assert.equal(r.leds[noteAt(0, 0)], C.RACK_DIM, "pad 1 has a sample");
     assert.equal(r.leds[noteAt(0, 4)], C.OFF, "pad 5 is empty");
-    assert.equal(r.leds[noteAt(0, 6)], C.OFF, "column 7 is not the rack");
+    assert.equal(r.leds[noteAt(0, 7)], C.RACK_DIM, "pad 8: the rack is 8 x 4");
     r.clear();
     r.press(noteAt(0, 1));                        /* hold pad 2 */
     assert.deepEqual(r.last(), ["r_trig", "1"], "stopped: the pad auditions");
@@ -417,10 +416,10 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
     assert.equal(r.leds[noteAt(0, 1)], C.RACK, "pad 2 now has steps");
     /* Hold a bottom pad: its steps are the top two rows. */
     r.clear();
-    r.press(noteAt(3, 0));                        /* pad 19 */
-    r.tap(noteAt(0, 7));                          /* step 8, not the switch */
+    r.press(noteAt(3, 0));                        /* pad 25 */
+    r.tap(noteAt(0, 7));                          /* step 8 */
     r.release(noteAt(3, 0));
-    assert.deepEqual(r.sets.filter((x) => x[0] !== "r_trig"), [["r_step", "18:7"]]);
+    assert.deepEqual(r.sets.filter((x) => x[0] !== "r_trig"), [["r_step", "24:7"]]);
     assert.equal(r.ui.state.mode, MODE_RACK);
     /* Hold + knob 2: clockwise mutes (once), counter-clockwise unmutes. */
     r.press(noteAt(0, 2));
@@ -439,6 +438,20 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
     r.clear();
     r.turn(3, 5); r.tick();
     assert.deepEqual(r.sets.filter((x) => x[0] !== "ui_state"), []);
+}
+
+/* ---- knob 8: one page per turn gesture, both directions ------------------ */
+{
+    const r = rig();
+    r.clear();
+    r.turn(7, 1); r.turn(7, 1); r.turn(7, 1);     /* one fast spin = one page */
+    assert.equal(r.ui.state.mode, MODE_HAT);
+    r.page(-1);
+    assert.equal(r.ui.state.mode, 0);
+    r.page(-1);
+    assert.equal(r.ui.state.mode, MODE_RACK, "wraps backwards");
+    r.page(1);
+    assert.equal(r.ui.state.mode, 0);
 }
 
 /* ---- knob acceleration ------------------------------------------------------- */

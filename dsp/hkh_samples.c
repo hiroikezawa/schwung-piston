@@ -88,10 +88,10 @@ hkh_sample_ref hkh_samples_rack_get(void *bank, int index) {
     return r;
 }
 
-int hkh_samples_rack_mask(hkh_sample_bank *b) {
-    int mask = 0;
+unsigned hkh_samples_rack_mask(hkh_sample_bank *b) {
+    unsigned mask = 0;
     for (int i = 0; b && i < HKH_RACK_VOICES; ++i)
-        if (atomic_load_explicit(&b->rack_len[i], memory_order_acquire) > 0) mask |= 1 << i;
+        if (atomic_load_explicit(&b->rack_len[i], memory_order_acquire) > 0) mask |= 1u << i;
     return mask;
 }
 

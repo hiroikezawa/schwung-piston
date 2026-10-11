@@ -23,9 +23,9 @@ enum { HAT_808, HAT_909, HAT_METAL, HAT_IND, HAT_MODEL_COUNT };
 
 enum { MODE_KICK = 0, MODE_HAT = 1, MODE_RACK = 2, MODE_COUNT = 3 };
 
-/* The drum rack: 24 one-shot pads, each with its own step pattern, mute and
+/* The drum rack: 32 one-shot pads, each with its own step pattern, mute and
  * volume, sharing the kick/hat sequencer's clock and length. */
-#define HKH_RACK 24
+#define HKH_RACK 32
 #define HKH_RACK_DEFAULT_VOL 0.8f
 typedef struct { const int16_t *data; int len, pos; float vel; } hkh_rack_voice;
 

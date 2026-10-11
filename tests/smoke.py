@@ -81,7 +81,7 @@ def block(inst=None):
 
 def ui_state(inst=None):
     f = read("ui_state", inst=inst).split(",")
-    assert f[0] == "3" and len(f) == 18 + 14 + 16 + 2 + 2 + 48, f
+    assert f[0] == "3" and len(f) == 18 + 14 + 16 + 2 + 2 + 64, f
     return [int(x) for x in f]
 
 
@@ -220,20 +220,20 @@ assert read("h_preset", inst=pr) == hp_text and ui_state(pr)[4] == 0x4444
 
 # --- rack: steps, mute, volume, state ------------------------------------------
 write("r_step", "3:2", inst=pr)
-write("r_step", "23:15", inst=pr)          # beyond 8 steps: refused
+write("r_step", "31:15", inst=pr)          # beyond 8 steps: refused
 write("r_mute", "5:1", inst=pr)
 write("r_vol", "7:0.25", inst=pr)
-for bad in ["24:1", "-1:1", "3", "3:x", "3:99"]:
+for bad in ["32:1", "-1:1", "3", "3:x", "3:99"]:
     write("r_step", bad, inst=pr)
 s2 = ui_state(pr)
-assert s2[52 + 3] == 4 and s2[52 + 23] == 0 and s2[51] == 1 << 5 and s2[76 + 7] == 250, s2[50:]
+assert s2[52 + 3] == 4 and s2[52 + 31] == 0 and s2[51] == 1 << 5 and s2[84 + 7] == 250, s2[50:]
 doc = json.loads(read("state", inst=pr))
 assert doc["rp"][3] == 4 and abs(doc["rv"][7] - 0.25) < 1e-4
 write("mode", 2, inst=pr)
 assert ui_state(pr)[14] == 2
 q = create(b".", None)
 write("state", read("state", inst=pr), inst=q)
-assert ui_state(q)[52 + 3] == 4 and ui_state(q)[76 + 7] == 250 and ui_state(q)[14] == 2
+assert ui_state(q)[52 + 3] == 4 and ui_state(q)[84 + 7] == 250 and ui_state(q)[14] == 2
 destroy(q)
 destroy(pr)
 

@@ -4,7 +4,7 @@
     {
       "title": "Pads",
       "lines": [
-        "Top-right pad cycles",
+        "Knob 8 turns the page",
         "KICK > HAT > RACK.",
         "Row 1: MUTE RESET SHUF",
         "  RAND FILL + 2 select",
@@ -44,7 +44,7 @@
     {
       "title": "Rack",
       "lines": [
-        "24 pads, 6 cols x 4.",
+        "32 pads, 8 cols x 4.",
         "Hold pad: other half",
         "  = its steps.",
         "Hold + knob 1 = vol",
@@ -57,7 +57,7 @@
         "1 VOL 2 MIX/METAL",
         "3 DECAY 4 DRIVE 5 COMP",
         "6 RUMBLE / FILTER",
-        "7 REVERB  8 reserved",
+        "7 REVERB  8 PAGE",
         "Touch = big readout"
       ]
     },
@@ -86,7 +86,7 @@
       "lines": [
         "UserLibrary/Samples/",
         "Piston/Rack/",
-        "  01.wav .. 24.wav",
+        "  01.wav .. 32.wav",
         "Restart Move after",
         "adding or updating."
       ]

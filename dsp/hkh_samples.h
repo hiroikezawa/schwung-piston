@@ -24,9 +24,9 @@
 #define HKH_USER_DIR "/data/UserData/UserLibrary/Samples/Piston"
 
 /* The drum rack (jog page / RACK surface): 24 one-shots, read from
- *   <user dir>/Rack/01.wav .. 24.wav
+ *   <user dir>/Rack/01.wav .. 32.wav
  * by the same worker after the kicks. A missing file is a silent pad. */
-#define HKH_RACK_VOICES 24
+#define HKH_RACK_VOICES 32
 #define HKH_RACK_MAX_SAMPLES (44100 * 3 / 2)     /* 1.5 s per pad */
 
 typedef struct {
@@ -54,7 +54,7 @@ hkh_sample_ref hkh_samples_get(void *bank, int index);
 int hkh_samples_user_mask(hkh_sample_bank *b);
 /* RT-safe. An empty pad answers len 0. */
 hkh_sample_ref hkh_samples_rack_get(void *bank, int index);
-int hkh_samples_rack_mask(hkh_sample_bank *b);
+unsigned hkh_samples_rack_mask(hkh_sample_bank *b);
 hkh_sample_ref hkh_default_sample(int index);
 const char *hkh_default_sample_name(int index);
 

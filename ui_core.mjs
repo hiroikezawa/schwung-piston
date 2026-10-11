@@ -31,8 +31,8 @@ export function noteAt(row, col) { return ROW_BASE[row] + col; }
  *   rows 3-4: its steps (8 steps: row 4 only; 16: row 3 = 1-8, row 4 = 9-16)
  * RACK is drawn by rackLeds below. */
 export const TOP_ROWS = [
-    ["mute", "reset", "shuffle", "random", "fill", "analog", "digital", "toggle"],   /* KICK */
-    ["mute", "reset", "shuffle", "random", "fill", "model", "offbeat", "toggle"],    /* HAT */
+    ["mute", "reset", "shuffle", "random", "fill", "analog", "digital", null],   /* KICK */
+    ["mute", "reset", "shuffle", "random", "fill", "model", "offbeat", null],    /* HAT */
 ];
 export const PRESETS = 8;
 
@@ -40,13 +40,13 @@ export const PRESETS = 8;
  * the block). Columns 7-8 are not part of it; the top-right pad is the
  * surface switch as everywhere. Holding a pad in the top two rows turns the
  * bottom two into its steps, and the other way round. */
-export const RACK_COLS = 6;
-export const RACK_PADS = 24;
+export const RACK_COLS = 8;
+export const RACK_PADS = 32;
 export function rackPadAt(row, col) {
     return col < RACK_COLS ? row * RACK_COLS + col : -1;
 }
 /* The step area for a held rack pad, and which step a pad there is. */
-export function rackStepRows(pad) { return pad < 12 ? [2, 3] : [0, 1]; }
+export function rackStepRows(pad) { return pad < 16 ? [2, 3] : [0, 1]; }
 export function rackStepPad(pad, i, len) {
     const rows = rackStepRows(pad);
     if (i >= len) return -1;
@@ -80,12 +80,12 @@ export const KNOBS = [
     ["h_vol", "h_color", "h_decay", "h_drive", "h_comp", "h_filter", "h_verb", null],
 ];
 export const KNOB_LABELS = [
-    ["VOL", "MIX", "DEC", "DRV", "CMP", "RMB", "VRB", "---"],
-    ["VOL", "MTL", "DEC", "DRV", "CMP", "FLT", "VRB", "---"],
+    ["VOL", "MIX", "DEC", "DRV", "CMP", "RMB", "VRB", "PAGE"],
+    ["VOL", "MTL", "DEC", "DRV", "CMP", "FLT", "VRB", "PAGE"],
 ];
 export const KNOB_NAMES = [
-    ["VOLUME", "ANALOG/DIGITAL", "DECAY", "DRIVE", "COMP", "RUMBLE", "REVERB", "RESERVED"],
-    ["VOLUME", "COLOR/METAL", "DECAY", "DRIVE", "COMP", "FILTER", "REVERB", "RESERVED"],
+    ["VOLUME", "ANALOG/DIGITAL", "DECAY", "DRIVE", "COMP", "RUMBLE", "REVERB", "PAGE"],
+    ["VOLUME", "COLOR/METAL", "DECAY", "DRIVE", "COMP", "FILTER", "REVERB", "PAGE"],
 ];
 export const PARAM_KEYS = [...KNOBS[0].slice(0, 7), ...KNOBS[1].slice(0, 7)];
 
@@ -111,6 +111,7 @@ const JOG_TURN = 14;
 const JOG_CLICK = 3;
 const PAGES = 2;               /* 0: play, 1: settings (8 / 16 steps) */
 const SHIFT_CC = 49;
+const PAGE_TURN_MS = 300;      /* knob 8: quiet this long before the next page */
 export const PRESET_FILE = "/data/UserData/schwung/piston-presets.json";
 const DECAY_KNOB = 2;          /* knob 3 */
 
@@ -144,7 +145,7 @@ export const C = {
 /* ---- ui_state ------------------------------------------------------------ */
 
 /* The DSP's one-line state; see write_ui_state in dsp/hkh_plugin.c. */
-export const UI_STATE_FIELDS = 18 + 14 + 16 + 2 + 2 + 24 + 24;
+export const UI_STATE_FIELDS = 18 + 14 + 16 + 2 + 2 + 32 + 32;
 
 export function parseUiState(text) {
     if (typeof text !== "string" || text.length === 0) return null;
@@ -167,7 +168,7 @@ export function parseUiState(text) {
         rec: n[15] === 1, userMask: n[16], len: n[17] === 16 ? 16 : 8, params, motion,
         rumbleOut: n[48] / 1000, build: n[49],
         rackMask: n[50], rackMute: n[51],
-        rp: n.slice(52, 76), rv: n.slice(76, 100).map((x) => x / 1000),
+        rp: n.slice(52, 84), rv: n.slice(84, 116).map((x) => x / 1000),
     };
 }
 
@@ -175,7 +176,7 @@ export function defaultState() {
     return parseUiState("3,0,-1,4369,17476,4369,17476,0,0,0,0,1,0,1,0,0,0,8," +
         "800,250,500,150,250,0,0,700,500,0,100,200,500,0," +
         Array(16).fill(-1).join(",") + ",0,0,0,0," +
-        Array(24).fill(0).join(",") + "," + Array(24).fill(800).join(","));
+        Array(32).fill(0).join(",") + "," + Array(32).fill(800).join(","));
 }
 
 /* ---- LEDs (pure) --------------------------------------------------------- */
@@ -213,7 +214,6 @@ export function computeLeds(s, ui) {
     put(0, 2, pressed(0, 2) ? C.SHUFFLE : C.SHUFFLE_DIM);
     put(0, 3, pressed(0, 3) ? C.RANDOM : C.RANDOM_DIM);
     put(0, 4, fill ? C.FILL : C.FILL_DIM);
-    put(0, 7, hat ? C.HAT : C.KICK);
 
     /* The voice's two selectors. */
     if (hat) {
@@ -258,7 +258,6 @@ export function computeLeds(s, ui) {
 }
 
 function rackLeds(s, ui, out, put) {
-    put(0, 7, C.RACK);
     const held = ui.rackHeld;
     const hit = (pad) => s.running && s.step >= 0 && ((s.rp[pad] >> s.step) & 1) === 1;
     for (let pad = 0; pad < RACK_PADS; pad++) {
@@ -342,6 +341,7 @@ export function createUi(host) {
     let s = defaultState();
     const ui = { held: new Set(), sel: null, presets: null, preset: [-1, -1], rackHeld: -1 };
     let shiftHeld = false;
+    let lastPageTurn = -1e9;
     let flash = "";                    /* a one-line confirmation, e.g. SAVED 3 */
     let flashUntil = 0;
     const selHeld = { analog: false, digital: false, model: false };
@@ -433,7 +433,7 @@ export function createUi(host) {
         say(`${hat ? "HAT" : "KICK"} PRESET ${slot + 1}`);
     }
 
-    function nextMode() {
+    function nextMode(dir = 1) {
         const hat = s.mode === MODE_HAT;
         if (s.mode !== MODE_RACK) {
             const prefix = hat ? "h_" : "k_";
@@ -443,7 +443,7 @@ export function createUi(host) {
         selHeld.analog = selHeld.digital = selHeld.model = false;
         updateSel();
         ui.rackHeld = -1;
-        const next = (s.mode + 1) % MODES;
+        const next = (s.mode + (dir < 0 ? MODES - 1 : 1)) % MODES;
         set("mode", next);
         s.mode = next;
     }
@@ -473,7 +473,6 @@ export function createUi(host) {
             }
             return;
         }
-        if (row === 0 && col === 7) { if (down) nextMode(); return; }
         const pad = rackPadAt(row, col);
         if (pad < 0 || !down) return;
         ui.rackHeld = pad;
@@ -616,6 +615,18 @@ export function createUi(host) {
 
     /* ---- knobs ---- */
     function onKnobTurn(knob, value) {
+        if (knob === 7) {
+            /* Knob 8 turns the page: KICK > HAT > RACK, one page per turn
+             * gesture (a spin does not race through all three). */
+            const d = decodeDelta(value), now = host.now();
+            if (d === 0) return;
+            const quiet = now - lastPageTurn >= PAGE_TURN_MS;
+            lastPageTurn = now;
+            if (!quiet) return;
+            nextMode(d > 0 ? 1 : -1);
+            dirty = true;
+            return;
+        }
         if (s.mode === MODE_RACK) {
             /* Hold a rack pad: knob 1 = its volume, knob 2 = its mute
              * (clockwise mutes, counter-clockwise unmutes). */
@@ -836,17 +847,17 @@ export function createUi(host) {
         const held = ui.rackHeld;
         if (held < 0) {
             for (let pad = 0; pad < RACK_PADS; pad++) {
-                const x = (pad % RACK_COLS) * 21, y = 13 + Math.floor(pad / RACK_COLS) * 12;
+                const x = (pad % RACK_COLS) * 16, y = 13 + Math.floor(pad / RACK_COLS) * 12;
                 const loaded = ((s.rackMask >> pad) & 1) === 1;
                 const muted = ((s.rackMute >> pad) & 1) === 1;
                 const hit = s.running && s.step >= 0 && ((s.rp[pad] >> s.step) & 1) === 1;
                 const label = muted ? "M" : String(pad + 1);
                 if (hit && !muted) {
-                    g.fillRect(x, y, 20, 11, 1);
-                    g.print(x + Math.floor((20 - tw(label)) / 2), y + 2, label, 0);
+                    g.fillRect(x, y, 15, 11, 1);
+                    g.print(x + Math.floor((15 - tw(label)) / 2), y + 2, label, 0);
                 } else {
-                    if (loaded) g.drawRect(x, y, 20, 11, 1);
-                    g.print(x + Math.floor((20 - tw(label)) / 2), y + 2, loaded || muted ? label : "-", 1);
+                    if (loaded) g.drawRect(x, y, 15, 11, 1);
+                    g.print(x + Math.floor((15 - tw(label)) / 2), y + 2, loaded || muted ? label : "-", 1);
                 }
             }
             if (host.now() < flashUntil) {
