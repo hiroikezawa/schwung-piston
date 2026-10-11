@@ -48,7 +48,7 @@ function mockDsp() {
     d.uiState = () => [3, d.running, d.step, d.kp, d.hp, d.kfill ? 0xF1 : d.kp, d.hfill ? 0xFF : d.hp,
         d.kmute, d.hmute, d.kfill, d.hfill, d.kmodel, d.ksample, d.hmodel, d.mode, d.rec, 0, d.len,
         ...PARAM_KEYS.map((k) => Math.round(d.params[k] * 1000)),
-        ...d.motion.map((m) => (m < 0 ? -1 : Math.round(m * 1000))), 250, 300,
+        ...d.motion.map((m) => (m < 0 ? -1 : Math.round(m * 1000))), 250, 301,
         d.rackMask, d.rackMute, ...d.rp, ...d.rv.map((x) => Math.round(x * 1000))].join(",");
     return d;
 }
@@ -337,7 +337,7 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
     r.tap(noteAt(0, 7)); r.tap(noteAt(0, 7));       /* HAT -> RACK -> KICK */
     r.touch(5, true);
     r.tick(4);
-    assert(r.printed.some((t) => t.startsWith("out -12dB") && t.includes("dsp 0.3.0")), r.printed.join("|"));
+    assert(r.printed.some((t) => t.startsWith("out -12dB") && t.includes("dsp 0.3.1")), r.printed.join("|"));
     r.touch(5, false);
 }
 
@@ -405,7 +405,7 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
     for (let c = 0; c < 8; c++) assert.equal(r.leds[noteAt(2, c)], C.OFF);
     r.tap(noteAt(2, 3));                          /* its step 4 */
     r.tap(noteAt(3, 3));                          /* 8 steps: nothing */
-    r.turn(0, 20);                                /* any knob: its volume */
+    r.turn(0, 20);                                /* knob 1: its volume */
     r.tick();
     assert(r.sets.some(([k, v]) => k === "r_step" && v === "1:3"));
     assert(r.sets.some(([k, v]) => k === "r_vol" && v.startsWith("1:0.9")), JSON.stringify(r.sets));
@@ -422,10 +422,15 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
     r.release(noteAt(3, 0));
     assert.deepEqual(r.sets.filter((x) => x[0] !== "r_trig"), [["r_step", "18:7"]]);
     assert.equal(r.ui.state.mode, MODE_RACK);
-    /* Mute + pad: toggles, no hold, no audition. */
+    /* Hold + knob 2: clockwise mutes (once), counter-clockwise unmutes. */
+    r.press(noteAt(0, 2));
     r.clear();
-    r.mute(true); r.tap(noteAt(0, 2)); r.mute(false);
+    r.turn(1, 3); r.turn(1, 3); r.turn(4, 3);
     assert.deepEqual(r.sets, [["r_mute", "2:1"]]);
+    r.release(noteAt(0, 2));
+    r.clear();
+    r.mute(true); r.tap(noteAt(0, 3)); r.mute(false);
+    assert(!r.sets.some(([k]) => k === "r_mute"), "Mute button does nothing");
     r.tick();
     assert.equal(r.leds[noteAt(0, 2)], C.RACK_MUTED);
     r.tick(2);

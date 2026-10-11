@@ -111,7 +111,6 @@ const JOG_TURN = 14;
 const JOG_CLICK = 3;
 const PAGES = 2;               /* 0: play, 1: settings (8 / 16 steps) */
 const SHIFT_CC = 49;
-const MUTE_CC = 88;
 export const PRESET_FILE = "/data/UserData/schwung/piston-presets.json";
 const DECAY_KNOB = 2;          /* knob 3 */
 
@@ -343,7 +342,6 @@ export function createUi(host) {
     let s = defaultState();
     const ui = { held: new Set(), sel: null, presets: null, preset: [-1, -1], rackHeld: -1 };
     let shiftHeld = false;
-    let muteHeld = false;
     let flash = "";                    /* a one-line confirmation, e.g. SAVED 3 */
     let flashUntil = 0;
     const selHeld = { analog: false, digital: false, model: false };
@@ -394,7 +392,7 @@ export function createUi(host) {
         ui.sel = null;
         ui.held.clear();
         ui.rackHeld = -1;
-        shiftHeld = muteHeld = false;
+        shiftHeld = false;
         touched = -1;
     }
 
@@ -478,13 +476,6 @@ export function createUi(host) {
         if (row === 0 && col === 7) { if (down) nextMode(); return; }
         const pad = rackPadAt(row, col);
         if (pad < 0 || !down) return;
-        if (muteHeld) {
-            const on = ((s.rackMute >> pad) & 1) ? 0 : 1;
-            set("r_mute", `${pad}:${on}`);
-            s.rackMute ^= (1 << pad);
-            readDue = true;
-            return;
-        }
         ui.rackHeld = pad;
         if (!s.running) set("r_trig", pad);
     }
@@ -626,9 +617,21 @@ export function createUi(host) {
     /* ---- knobs ---- */
     function onKnobTurn(knob, value) {
         if (s.mode === MODE_RACK) {
-            /* Hold a rack pad and turn any knob: that pad's volume. */
+            /* Hold a rack pad: knob 1 = its volume, knob 2 = its mute
+             * (clockwise mutes, counter-clockwise unmutes). */
             const pad = ui.rackHeld, d = decodeDelta(value);
             if (pad < 0 || d === 0) return;
+            if (knob === 1) {
+                const on = d > 0 ? 1 : 0;
+                if ((((s.rackMute >> pad) & 1) === 1) !== (on === 1)) {
+                    set("r_mute", `${pad}:${on}`);
+                    s.rackMute ^= (1 << pad);
+                    readDue = true;
+                    dirty = true;
+                }
+                return;
+            }
+            if (knob !== 0) return;
             const now = host.now();
             const step = knobStep(now - lastTurn[knob]);
             lastTurn[knob] = now;
@@ -685,7 +688,6 @@ export function createUi(host) {
             return;
         }
         if (status === 0xB0 && d1 === SHIFT_CC) { shiftHeld = d2 > 0; return; }
-        if (status === 0xB0 && d1 === MUTE_CC) { muteHeld = d2 > 0; return; }
         if (status === 0xB0 && d1 >= KNOB_CC_FIRST && d1 < KNOB_CC_FIRST + 8) {
             onKnobTurn(d1 - KNOB_CC_FIRST, d2);
         } else if (status === 0xB0 && (d1 === JOG_TURN || d1 === JOG_CLICK)) {
@@ -866,6 +868,7 @@ export function createUi(host) {
         const v = s.rv[held];
         const pct = `VOL ${Math.round(v * 100)}%`;
         g.print(0, 50, pct, 1);
+        g.print(0, 40, `k1 VOL  k2 MUTE ${muted ? "ON" : "OFF"}`, 1);
         g.drawRect(52, 50, 76, 7, 1);
         g.fillRect(54, 52, Math.round(72 * v), 3, 1);
     }
