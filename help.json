@@ -4,11 +4,11 @@
     {
       "title": "Pads",
       "lines": [
-        "One voice at a time:",
-        "top-right = KICK/HAT.",
+        "Top-right pad cycles",
+        "KICK > HAT > RACK.",
         "Row 1: MUTE RESET SHUF",
-        "  RAND FILL(hold)",
-        "Row 2: selectors"
+        "  RAND FILL + 2 select",
+        "Row 2: 8 presets"
       ]
     },
     {
@@ -22,13 +22,33 @@
       ]
     },
     {
-      "title": "Row 2",
+      "title": "Selectors",
       "lines": [
-        "KICK: 1 ANALOG (hold)",
-        "  2 DIGITAL (hold)",
-        "  + step 1-4 to pick",
-        "HAT: 1 MODEL (hold)",
-        "  2 OFFBEAT"
+        "Row 1 pads 6-7.",
+        "KICK: ANALOG, DIGITAL",
+        "  hold + step 1-4",
+        "HAT: MODEL (hold),",
+        "  OFFBEAT"
+      ]
+    },
+    {
+      "title": "Presets",
+      "lines": [
+        "Row 2, kick and hat",
+        "have 8 each.",
+        "Tap = recall",
+        "Shift+tap = save",
+        "Sound + pattern."
+      ]
+    },
+    {
+      "title": "Rack",
+      "lines": [
+        "24 pads, 6 cols x 4.",
+        "Hold pad: other half",
+        "  = its steps.",
+        "Hold + any knob = vol",
+        "Mute btn + pad = mute"
       ]
     },
     {
@@ -57,6 +77,16 @@
         "Digital kicks: own WAVs",
         "UserLibrary/Samples/",
         "Piston/kick1..4.wav",
+        "Restart Move after",
+        "adding or updating."
+      ]
+    },
+    {
+      "title": "Rack samples",
+      "lines": [
+        "UserLibrary/Samples/",
+        "Piston/Rack/",
+        "  01.wav .. 24.wav",
         "Restart Move after",
         "adding or updating."
       ]

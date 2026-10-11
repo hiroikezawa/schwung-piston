@@ -4,7 +4,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import {
     createUi, padAt, noteAt, computeLeds, parseUiState, defaultState, knobStep, C,
-    MODE_HAT, PARAM_KEYS, stepPad, padStep,
+    MODE_HAT, MODE_RACK, PARAM_KEYS, stepPad, padStep, PRESET_FILE, parsePresets,
+    rackPadAt, rackStepPad, rackPadStep,
 } from "../ui_core.mjs";
 
 /* ---- a mock DSP that speaks the same keys as dsp/hkh_plugin.c ------------- */
@@ -15,6 +16,7 @@ function mockDsp() {
         params: Object.fromEntries(PARAM_KEYS.map((k, i) =>
             [k, [0.8, 0.25, 0.5, 0.15, 0.25, 0, 0, 0.7, 0.5, 0, 0.1, 0.2, 0.5, 0][i]])),
         motion: new Array(16).fill(-1),
+        rackMask: 0xFFFFFF & ~(1 << 4), rackMute: 0, rp: new Array(24).fill(0), rv: new Array(24).fill(0.8),
     };
     d.set = (key, value) => {
         const v = Number(value);
@@ -35,13 +37,19 @@ function mockDsp() {
         case "k_sample_pick": d.ksample = v; break;
         case "h_model_pick": d.hmodel = v; break;
         case "h_motion_rec": d.rec = v; break;
+        case "k_preset": { const f = String(value).split(",").map(Number); d.kmodel = f[0]; d.kp = f[2]; break; }
+        case "h_preset": { const f = String(value).split(",").map(Number); d.hmodel = f[0]; d.hp = f[1]; break; }
+        case "r_step": { const [a, b] = String(value).split(":").map(Number); d.rp[a] ^= 1 << b; break; }
+        case "r_mute": { const [a, b] = String(value).split(":").map(Number); d.rackMute = b ? d.rackMute | (1 << a) : d.rackMute & ~(1 << a); break; }
+        case "r_vol": { const [a, b] = String(value).split(":").map(Number); d.rv[a] = b; break; }
         default: break;
         }
     };
-    d.uiState = () => [2, d.running, d.step, d.kp, d.hp, d.kfill ? 0xF1 : d.kp, d.hfill ? 0xFF : d.hp,
+    d.uiState = () => [3, d.running, d.step, d.kp, d.hp, d.kfill ? 0xF1 : d.kp, d.hfill ? 0xFF : d.hp,
         d.kmute, d.hmute, d.kfill, d.hfill, d.kmodel, d.ksample, d.hmodel, d.mode, d.rec, 0, d.len,
         ...PARAM_KEYS.map((k) => Math.round(d.params[k] * 1000)),
-        ...d.motion.map((m) => (m < 0 ? -1 : Math.round(m * 1000))), 250, 208].join(",");
+        ...d.motion.map((m) => (m < 0 ? -1 : Math.round(m * 1000))), 250, 300,
+        d.rackMask, d.rackMute, ...d.rp, ...d.rv.map((x) => Math.round(x * 1000))].join(",");
     return d;
 }
 
@@ -50,11 +58,16 @@ function rig() {
     const r = {
         dsp, sets: [], leds: {}, ledLog: [], padBlock: [], on: true, t: 1000,
         snapshot: Object.fromEntries(Array.from({ length: 32 }, (_, i) => [String(68 + i), 45])),
-        ledFail: new Set(), printed: [],
+        ledFail: new Set(), printed: [], files: {},
     };
     r.host = {
         setParam: (k, v) => { r.sets.push([k, v]); dsp.set(k, v); return true; },
-        getParam: (k) => (k === "ui_state" ? dsp.uiState() : null),
+        getParam: (k) => (k === "ui_state" ? dsp.uiState()
+            : k === "k_preset" ? `${dsp.kmodel},${dsp.ksample},${dsp.kp},0.8,0.25,0.5,0.15,0.25,0,0`
+            : k === "h_preset" ? `${dsp.hmodel},${dsp.hp},0.7,0.5,0,0.1,0.2,0.5,0,` + Array(16).fill(-1).join(",")
+            : null),
+        readFile: (path) => (path in r.files ? r.files[path] : null),
+        writeFile: (path, text) => { r.files[path] = text; return true; },
         padBlock: (on) => r.padBlock.push(on),
         sendLed: (note, color) => {
             if (r.ledFail.has(note)) return false;
@@ -81,6 +94,8 @@ function rig() {
     r.jog = (delta) => r.ui.onMidi([0xB0, 14, delta > 0 ? delta : 128 + delta]);
     r.click = () => { r.ui.onMidi([0xB0, 3, 127]); r.ui.onMidi([0xB0, 3, 0]); };
     r.touch = (knob, down) => r.ui.onMidi(down ? [0x90, knob, 127] : [0x90, knob, 0]);
+    r.shift = (down) => r.ui.onMidi([0xB0, 49, down ? 127 : 0]);
+    r.mute = (down) => r.ui.onMidi([0xB0, 88, down ? 127 : 0]);
     r.last = () => r.sets[r.sets.length - 1];
     r.keys = () => r.sets.map((s) => s[0]);
     r.clear = () => { r.sets.length = 0; };
@@ -131,10 +146,9 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
     assert.equal(r.leds[noteAt(3, 0)], C.KICK, "kick step 1 on the bottom row");
     assert.equal(r.leds[noteAt(3, 2)], C.OFF);
     for (let c = 0; c < 8; c++) assert.equal(r.leds[noteAt(2, c)], C.OFF, "row 3 unused at 8 steps");
-    assert.equal(r.leds[noteAt(1, 0)], C.ANALOG_DIM);
-    assert.equal(r.leds[noteAt(1, 1)], C.DIGITAL_DIM);
-    for (let c = 2; c < 8; c++) assert.equal(r.leds[noteAt(1, c)], C.OFF);
-    for (let c = 5; c < 7; c++) assert.equal(r.leds[noteAt(0, c)], C.OFF);
+    assert.equal(r.leds[noteAt(0, 5)], C.ANALOG_DIM);
+    assert.equal(r.leds[noteAt(0, 6)], C.DIGITAL_DIM);
+    for (let c = 0; c < 8; c++) assert.equal(r.leds[noteAt(1, c)], C.OFF, "no presets saved yet");
     r.clear();
     r.tap(noteAt(3, 2));
     r.tap(noteAt(2, 2));                           /* row 3: nothing at 8 steps */
@@ -147,43 +161,48 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
     assert.equal(r.leds[noteAt(0, 7)], C.HAT);
     assert.equal(r.leds[noteAt(3, 2)], C.HAT, "hat step 3");
     assert.equal(r.leds[noteAt(3, 0)], C.OFF, "no kick on the hat surface");
-    assert.equal(r.leds[noteAt(1, 0)], C.MODEL_DIM);
-    assert.equal(r.leds[noteAt(1, 1)], C.OFFBEAT_DIM);
+    assert.equal(r.leds[noteAt(0, 5)], C.MODEL_DIM);
+    assert.equal(r.leds[noteAt(0, 6)], C.OFFBEAT_DIM);
     r.clear();
     r.tap(noteAt(3, 5));
     r.tap(noteAt(0, 0)); r.tap(noteAt(0, 1)); r.tap(noteAt(0, 2)); r.tap(noteAt(0, 3));
-    r.tap(noteAt(1, 1));
-    r.tap(noteAt(0, 5)); r.tap(noteAt(0, 6)); r.tap(noteAt(1, 4));   /* empty pads */
+    r.tap(noteAt(0, 6));
+    r.tap(noteAt(1, 4));                          /* an empty preset: nothing sent */
     assert.deepEqual(r.sets, [["h_step", "5"], ["h_mute", "1"], ["h_reset", "1"],
         ["h_shuffle", "1"], ["h_random", "1"], ["h_offbeat", "1"]]);
+    /* KICK -> HAT -> RACK -> KICK */
     r.clear();
     r.tap(noteAt(0, 7));
+    r.tick();
+    assert.equal(r.ui.state.mode, MODE_RACK);
+    assert.equal(r.leds[noteAt(0, 7)], C.RACK);
+    r.tap(noteAt(0, 7));
     r.tap(noteAt(0, 0));
-    assert.deepEqual(r.sets, [["mode", "0"], ["k_mute", "1"]], "row 1 follows the voice");
+    assert.deepEqual(r.sets, [["mode", "2"], ["mode", "0"], ["k_mute", "1"]], "row 1 follows the voice");
 }
 
 /* ---- selectors: hold row 2, the first step pads choose -------------------- */
 {
     const r = rig();
     r.clear();
-    r.press(noteAt(1, 0));                         /* ANALOG held */
+    r.press(noteAt(0, 5));                         /* ANALOG held */
     r.tick();
     assert.equal(r.leds[noteAt(3, 1)], C.WHITE, "current model white");
     assert.equal(r.leds[noteAt(3, 0)], C.ANALOG);
     assert.equal(r.leds[noteAt(3, 4)], C.OFF);
     r.tap(noteAt(3, 2));
     r.tap(noteAt(3, 5));                           /* beyond the 3 models: ignored */
-    r.release(noteAt(1, 0));
-    r.press(noteAt(1, 1));                         /* DIGITAL held */
+    r.release(noteAt(0, 5));
+    r.press(noteAt(0, 6));                         /* DIGITAL held */
     r.tap(noteAt(3, 3));
-    r.release(noteAt(1, 1));
+    r.release(noteAt(0, 6));
     r.tap(noteAt(3, 3));                           /* a step again */
     assert.deepEqual(r.sets, [["k_model_pick", "2"], ["k_sample_pick", "3"], ["k_step", "3"]]);
     r.tap(noteAt(0, 7));
     r.clear();
-    r.press(noteAt(1, 0));                         /* MODEL held (hat) */
+    r.press(noteAt(0, 5));                         /* MODEL held (hat) */
     r.tap(noteAt(3, 3));
-    r.release(noteAt(1, 0));
+    r.release(noteAt(0, 5));
     assert.deepEqual(r.sets, [["h_model_pick", "3"]]);
 }
 
@@ -307,19 +326,114 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
     r.tap(noteAt(0, 7));
     r.tick();
     assert(r.printed.includes("HAT"));
-    r.press(noteAt(1, 0));
+    r.press(noteAt(0, 5));
     r.tick();
     assert(r.printed.includes("HAT MODEL") && r.printed.includes("METAL"));
-    r.release(noteAt(1, 0));
+    r.release(noteAt(0, 5));
     r.touch(2, true);
     r.tick(2);
     assert(r.printed.includes("REC"));
     r.touch(2, false);
-    r.tap(noteAt(0, 7));
+    r.tap(noteAt(0, 7)); r.tap(noteAt(0, 7));       /* HAT -> RACK -> KICK */
     r.touch(5, true);
     r.tick(4);
-    assert(r.printed.some((t) => t.startsWith("out -12dB") && t.includes("dsp 0.2.8")), r.printed.join("|"));
+    assert(r.printed.some((t) => t.startsWith("out -12dB") && t.includes("dsp 0.3.0")), r.printed.join("|"));
     r.touch(5, false);
+}
+
+/* ---- presets: per voice, Shift+pad saves, tap recalls, kept in a file ------ */
+{
+    const r = rig();
+    r.clear();
+    r.dsp.kmodel = 2; r.dsp.kp = 0x00F0;
+    r.shift(true); r.tap(noteAt(1, 2)); r.shift(false);
+    const saved = parsePresets(r.files[PRESET_FILE]);
+    assert(saved[0][2] && saved[0][2].startsWith("2,0,240"), r.files[PRESET_FILE]);
+    assert.equal(saved[1][2], null, "the hat's presets are separate");
+    r.tick();
+    assert.equal(r.leds[noteAt(1, 2)], C.WHITE, "the preset just saved");
+    r.dsp.kmodel = 0; r.dsp.kp = 1;
+    r.tap(noteAt(1, 2));
+    assert.equal(r.last()[0], "k_preset");
+    r.tick();
+    assert.equal(r.ui.state.kmodel, 2);
+    assert.equal(r.ui.state.kp, 0x00F0);
+    /* Hat surface: its own eight, the kick's slot 3 is empty there. */
+    r.tap(noteAt(0, 7));
+    r.tick();
+    assert.equal(r.leds[noteAt(1, 2)], C.OFF);
+    r.clear();
+    r.tap(noteAt(1, 2));
+    assert.deepEqual(r.sets, []);
+    r.shift(true); r.tap(noteAt(1, 0)); r.shift(false);
+    assert(parsePresets(r.files[PRESET_FILE])[1][0]);
+    assert(parsePresets(r.files[PRESET_FILE])[0][2], "kick preset kept");
+    /* A fresh UI reads them back from the file. */
+    const r2 = rig();
+    r2.files = r.files;
+    r2.tick();
+    r2.clear();
+    r2.tap(noteAt(1, 2));
+    assert.equal(r2.last()[0], "k_preset");
+    assert.deepEqual(parsePresets("{bad json"), [Array(8).fill(null), Array(8).fill(null)]);
+}
+
+/* ---- the rack: 6 x 4 pads, hold for steps, Mute+pad, knob = volume -------- */
+{
+    assert.equal(rackPadAt(0, 0), 0);
+    assert.equal(rackPadAt(3, 5), 23);
+    assert.equal(rackPadAt(0, 6), -1);
+    assert.deepEqual(padAt(rackStepPad(0, 0, 8)), { row: 2, col: 0 }, "top pad: steps below");
+    assert.deepEqual(padAt(rackStepPad(12, 0, 8)), { row: 0, col: 0 }, "bottom pad: steps above");
+    assert.deepEqual(padAt(rackStepPad(12, 15, 16)), { row: 1, col: 7 });
+    assert.equal(rackStepPad(0, 8, 8), -1);
+    assert.equal(rackPadStep(0, 3, 2, 8), -1, "second row unused at 8 steps");
+    assert.equal(rackPadStep(0, 3, 2, 16), 10);
+
+    const r = rig();
+    r.tap(noteAt(0, 7)); r.tap(noteAt(0, 7));      /* -> RACK */
+    r.tick();
+    assert.equal(r.ui.state.mode, MODE_RACK);
+    assert.equal(r.leds[noteAt(0, 0)], C.RACK_DIM, "pad 1 has a sample");
+    assert.equal(r.leds[noteAt(0, 4)], C.OFF, "pad 5 is empty");
+    assert.equal(r.leds[noteAt(0, 6)], C.OFF, "column 7 is not the rack");
+    r.clear();
+    r.press(noteAt(0, 1));                        /* hold pad 2 */
+    assert.deepEqual(r.last(), ["r_trig", "1"], "stopped: the pad auditions");
+    r.tick();
+    assert.equal(r.leds[noteAt(0, 1)], C.WHITE);
+    for (let c = 0; c < 8; c++) assert.equal(r.leds[noteAt(2, c)], C.OFF);
+    r.tap(noteAt(2, 3));                          /* its step 4 */
+    r.tap(noteAt(3, 3));                          /* 8 steps: nothing */
+    r.turn(0, 20);                                /* any knob: its volume */
+    r.tick();
+    assert(r.sets.some(([k, v]) => k === "r_step" && v === "1:3"));
+    assert(r.sets.some(([k, v]) => k === "r_vol" && v.startsWith("1:0.9")), JSON.stringify(r.sets));
+    assert(!r.sets.some(([k]) => k === "r_step" && r.sets.filter((x) => x[0] === "r_step").length > 1));
+    assert.equal(r.leds[noteAt(2, 3)], C.RACK_STEP);
+    r.release(noteAt(0, 1));
+    r.tick();
+    assert.equal(r.leds[noteAt(2, 3)], C.RACK_DIM, "back to the rack: pad 16 has a sample, no steps");
+    assert.equal(r.leds[noteAt(0, 1)], C.RACK, "pad 2 now has steps");
+    /* Hold a bottom pad: its steps are the top two rows. */
+    r.clear();
+    r.press(noteAt(3, 0));                        /* pad 19 */
+    r.tap(noteAt(0, 7));                          /* step 8, not the switch */
+    r.release(noteAt(3, 0));
+    assert.deepEqual(r.sets.filter((x) => x[0] !== "r_trig"), [["r_step", "18:7"]]);
+    assert.equal(r.ui.state.mode, MODE_RACK);
+    /* Mute + pad: toggles, no hold, no audition. */
+    r.clear();
+    r.mute(true); r.tap(noteAt(0, 2)); r.mute(false);
+    assert.deepEqual(r.sets, [["r_mute", "2:1"]]);
+    r.tick();
+    assert.equal(r.leds[noteAt(0, 2)], C.RACK_MUTED);
+    r.tick(2);
+    assert(r.printed.includes("RACK"));
+    /* No pad held: knobs do nothing here. */
+    r.clear();
+    r.turn(3, 5); r.tick();
+    assert.deepEqual(r.sets.filter((x) => x[0] !== "ui_state"), []);
 }
 
 /* ---- knob acceleration ------------------------------------------------------- */

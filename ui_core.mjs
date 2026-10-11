@@ -24,15 +24,40 @@ export function padAt(note) {
 
 export function noteAt(row, col) { return ROW_BASE[row] + col; }
 
-/* Each voice has its OWN surface; the top-right pad switches between them.
- *   row 1: the same five performance pads for either voice, then the switch
- *   row 2: the voice's selectors
- *   rows 3-4: its steps (8 steps: row 4 only; 16: row 3 = 1-8, row 4 = 9-16) */
-export const TOP_ROW = ["mute", "reset", "shuffle", "random", "fill", null, null, "toggle"];
-export const SECOND_ROW = [
-    ["analog", "digital", null, null, null, null, null, null],   /* KICK */
-    ["model", "offbeat", null, null, null, null, null, null],    /* HAT */
+/* Three surfaces -- KICK, HAT, RACK -- and the top-right pad steps through
+ * them in that order. On KICK and HAT:
+ *   row 1: five performance pads, the voice's two selectors, the switch
+ *   row 2: eight presets for this voice (tap recalls, Shift+tap saves)
+ *   rows 3-4: its steps (8 steps: row 4 only; 16: row 3 = 1-8, row 4 = 9-16)
+ * RACK is drawn by rackLeds below. */
+export const TOP_ROWS = [
+    ["mute", "reset", "shuffle", "random", "fill", "analog", "digital", "toggle"],   /* KICK */
+    ["mute", "reset", "shuffle", "random", "fill", "model", "offbeat", "toggle"],    /* HAT */
 ];
+export const PRESETS = 8;
+
+/* The rack: 24 pads in a 6 x 4 block (pad 1 top left, 24 bottom right of
+ * the block). Columns 7-8 are not part of it; the top-right pad is the
+ * surface switch as everywhere. Holding a pad in the top two rows turns the
+ * bottom two into its steps, and the other way round. */
+export const RACK_COLS = 6;
+export const RACK_PADS = 24;
+export function rackPadAt(row, col) {
+    return col < RACK_COLS ? row * RACK_COLS + col : -1;
+}
+/* The step area for a held rack pad, and which step a pad there is. */
+export function rackStepRows(pad) { return pad < 12 ? [2, 3] : [0, 1]; }
+export function rackStepPad(pad, i, len) {
+    const rows = rackStepRows(pad);
+    if (i >= len) return -1;
+    return noteAt(rows[i < 8 ? 0 : 1], i % 8);
+}
+export function rackPadStep(pad, row, col, len) {
+    const rows = rackStepRows(pad);
+    if (row === rows[0]) return col;
+    if (row === rows[1] && len === 16) return 8 + col;
+    return -1;
+}
 
 /* Which pad holds step i (0-based), and which step a pad holds (-1 none). */
 export function stepPad(i, len) {
@@ -46,6 +71,8 @@ export function padStep(row, col, len) {
 
 export const MODE_KICK = 0;
 export const MODE_HAT = 1;
+export const MODE_RACK = 2;
+export const MODES = 3;
 
 /* Knob 1-8 in each mode. DECAY is knob 3 in both. Knob 8 is reserved. */
 export const KNOBS = [
@@ -83,6 +110,9 @@ const KNOB_CC_FIRST = 71;
 const JOG_TURN = 14;
 const JOG_CLICK = 3;
 const PAGES = 2;               /* 0: play, 1: settings (8 / 16 steps) */
+const SHIFT_CC = 49;
+const MUTE_CC = 88;
+export const PRESET_FILE = "/data/UserData/schwung/piston-presets.json";
 const DECAY_KNOB = 2;          /* knob 3 */
 
 /* Move palette indices (src/shared/constants.mjs names in comments). */
@@ -107,17 +137,20 @@ export const C = {
     DIGITAL: 14, DIGITAL_DIM: 91,   /* CyanTeal */
     MODEL: 9, MODEL_DIM: 81,        /* BrightLime */
     OFFBEAT: 23, OFFBEAT_DIM: 109,  /* NeonPink */
+    RACK: 14, RACK_DIM: 91,         /* CyanTeal: the rack switch, pads with a sample */
+    RACK_STEP: 16,                  /* AzureBlue: a held pad's steps */
+    RACK_MUTED: 66,                 /* VeryDarkRed */
 };
 
 /* ---- ui_state ------------------------------------------------------------ */
 
 /* The DSP's one-line state; see write_ui_state in dsp/hkh_plugin.c. */
-export const UI_STATE_FIELDS = 18 + 14 + 16 + 2;
+export const UI_STATE_FIELDS = 18 + 14 + 16 + 2 + 2 + 24 + 24;
 
 export function parseUiState(text) {
     if (typeof text !== "string" || text.length === 0) return null;
     const f = text.split(",");
-    if (f.length !== UI_STATE_FIELDS || f[0] !== "2") return null;
+    if (f.length !== UI_STATE_FIELDS || f[0] !== "3") return null;
     const n = f.map((x) => Number(x));
     if (n.some((x) => !Number.isInteger(x))) return null;
     const params = {};
@@ -134,13 +167,16 @@ export function parseUiState(text) {
         kmodel: n[11], ksample: n[12], hmodel: n[13], mode: n[14],
         rec: n[15] === 1, userMask: n[16], len: n[17] === 16 ? 16 : 8, params, motion,
         rumbleOut: n[48] / 1000, build: n[49],
+        rackMask: n[50], rackMute: n[51],
+        rp: n.slice(52, 76), rv: n.slice(76, 100).map((x) => x / 1000),
     };
 }
 
 export function defaultState() {
-    return parseUiState("2,0,-1,4369,17476,4369,17476,0,0,0,0,1,0,1,0,0,0,8," +
+    return parseUiState("3,0,-1,4369,17476,4369,17476,0,0,0,0,1,0,1,0,0,0,8," +
         "800,250,500,150,250,0,0,700,500,0,100,200,500,0," +
-        Array(16).fill(-1).join(",") + ",0,0");
+        Array(16).fill(-1).join(",") + ",0,0,0,0," +
+        Array(24).fill(0).join(",") + "," + Array(24).fill(800).join(","));
 }
 
 /* ---- LEDs (pure) --------------------------------------------------------- */
@@ -159,12 +195,15 @@ function hatStepColor(s, i, focus, faint) {
 
 /**
  * All 32 pad colours, keyed by note, for the voice on screen (s.mode).
- * ui: { held: Set(note), sel: "analog"|"digital"|"model"|null }
+ * ui: { held: Set(note), sel: "analog"|"digital"|"model"|null,
+ *       presets: [[8 strings|null] kick, [8] hat], preset: [kick, hat] last used,
+ *       rackHeld: pad index or -1 }
  */
 export function computeLeds(s, ui) {
     const out = {};
     for (let note = 68; note <= 99; note++) out[note] = C.OFF;
     const put = (row, col, color) => { out[noteAt(row, col)] = color; };
+    if (s.mode === MODE_RACK) return rackLeds(s, ui, out, put);
     const pressed = (row, col) => ui.held.has(noteAt(row, col));
     const hat = s.mode === MODE_HAT;
     const mute = hat ? s.hmute : s.kmute, fill = hat ? s.hfill : s.kfill;
@@ -177,13 +216,23 @@ export function computeLeds(s, ui) {
     put(0, 4, fill ? C.FILL : C.FILL_DIM);
     put(0, 7, hat ? C.HAT : C.KICK);
 
-    /* Row 2: this voice's selectors. */
+    /* The voice's two selectors. */
     if (hat) {
-        put(1, 0, ui.sel === "model" ? C.MODEL : C.MODEL_DIM);
-        put(1, 1, pressed(1, 1) ? C.OFFBEAT : C.OFFBEAT_DIM);
+        put(0, 5, ui.sel === "model" ? C.MODEL : C.MODEL_DIM);
+        put(0, 6, pressed(0, 6) ? C.OFFBEAT : C.OFFBEAT_DIM);
     } else {
-        put(1, 0, ui.sel === "analog" ? C.ANALOG : C.ANALOG_DIM);
-        put(1, 1, ui.sel === "digital" ? C.DIGITAL : C.DIGITAL_DIM);
+        put(0, 5, ui.sel === "analog" ? C.ANALOG : C.ANALOG_DIM);
+        put(0, 6, ui.sel === "digital" ? C.DIGITAL : C.DIGITAL_DIM);
+    }
+
+    /* Row 2: this voice's presets. White = the one last recalled or saved. */
+    const v = hat ? 1 : 0;
+    const slots = (ui.presets && ui.presets[v]) || [];
+    for (let i = 0; i < PRESETS; i++) {
+        if (pressed(1, i)) put(1, i, C.WHITE);
+        else if (!slots[i]) put(1, i, C.OFF);
+        else if (ui.preset && ui.preset[v] === i) put(1, i, C.WHITE);
+        else put(1, i, hat ? C.HAT_DIM : C.KICK_DIM);
     }
 
     /* Rows 3-4: the steps, or while a selector is held, its choices on the
@@ -207,6 +256,55 @@ export function computeLeds(s, ui) {
         out[stepPad(i, s.len)] = color;
     }
     return out;
+}
+
+function rackLeds(s, ui, out, put) {
+    put(0, 7, C.RACK);
+    const held = ui.rackHeld;
+    const hit = (pad) => s.running && s.step >= 0 && ((s.rp[pad] >> s.step) & 1) === 1;
+    for (let pad = 0; pad < RACK_PADS; pad++) {
+        const row = Math.floor(pad / RACK_COLS), col = pad % RACK_COLS;
+        const loaded = ((s.rackMask >> pad) & 1) === 1;
+        const muted = ((s.rackMute >> pad) & 1) === 1;
+        let color;
+        if (pad === held) color = C.WHITE;
+        else if (muted) color = C.RACK_MUTED;
+        else if (!loaded) color = C.OFF;
+        else if (hit(pad)) color = C.LIGHT;
+        else color = s.rp[pad] ? C.RACK : C.RACK_DIM;
+        put(row, col, color);
+    }
+    if (held >= 0) {
+        /* The held pad's steps cover the other half. */
+        for (const row of rackStepRows(held)) for (let col = 0; col < 8; col++) put(row, col, C.OFF);
+        for (let i = 0; i < s.len; i++) {
+            const on = ((s.rp[held] >> i) & 1) === 1;
+            let color = on ? C.RACK_STEP : C.OFF;
+            if (s.running && s.step === i) color = on ? C.WHITE : C.LIGHT;
+            out[rackStepPad(held, i, s.len)] = color;
+        }
+    }
+    return out;
+}
+
+/* ---- presets ------------------------------------------------------------- */
+
+/* The preset file: {"kick":[8 x string|null],"hat":[8 x string|null]}.
+ * Anything unreadable starts empty rather than refusing to run. */
+export function parsePresets(text) {
+    const empty = () => Array(PRESETS).fill(null);
+    const out = [empty(), empty()];
+    if (typeof text !== "string" || !text) return out;
+    let j;
+    try { j = JSON.parse(text); } catch (e) { return out; }
+    ["kick", "hat"].forEach((k, v) => {
+        const a = j && Array.isArray(j[k]) ? j[k] : [];
+        for (let i = 0; i < PRESETS; i++) out[v][i] = typeof a[i] === "string" && a[i] ? a[i] : null;
+    });
+    return out;
+}
+export function serializePresets(p) {
+    return JSON.stringify({ kick: p[0], hat: p[1] });
 }
 
 /* ---- encoder decoding ---------------------------------------------------- */
@@ -236,13 +334,18 @@ const REASSERT_EVERY_TICKS = 6;    /* one row of our LEDs re-sent round-robin */
  *   setParam(key, value) -> bool, getParam(key) -> string|null,
  *   padBlock(on), sendLed(note, color) -> bool, padSnapshot() -> {note: color}|null,
  *   displayOn() -> bool, now() -> ms,
+ *   readFile(path) -> string|null, writeFile(path, text) -> bool,
  *   gfx: { clear(), print(x, y, text, color), fillRect(x, y, w, h, c),
  *          drawRect(x, y, w, h, c), textWidth(text) }
  * }
  */
 export function createUi(host) {
     let s = defaultState();
-    const ui = { held: new Set(), sel: null };
+    const ui = { held: new Set(), sel: null, presets: null, preset: [-1, -1], rackHeld: -1 };
+    let shiftHeld = false;
+    let muteHeld = false;
+    let flash = "";                    /* a one-line confirmation, e.g. SAVED 3 */
+    let flashUntil = 0;
     const selHeld = { analog: false, digital: false, model: false };
     let fillHeld = [false, false];
     let recHeld = false;
@@ -270,7 +373,10 @@ export function createUi(host) {
     }
 
     function flushPending() {
-        for (const [key, value] of pending) set(key, value.toFixed(4));
+        for (const [key, value] of pending) {
+            if (key.startsWith("r_vol:")) set("r_vol", `${key.slice(6)}:${value.toFixed(4)}`);
+            else set(key, value.toFixed(4));
+        }
         pending.clear();
     }
 
@@ -287,7 +393,113 @@ export function createUi(host) {
         selHeld.analog = selHeld.digital = selHeld.model = false;
         ui.sel = null;
         ui.held.clear();
+        ui.rackHeld = -1;
+        shiftHeld = muteHeld = false;
         touched = -1;
+    }
+
+    function loadPresets() {
+        if (ui.presets) return;
+        ui.presets = parsePresets(host.readFile ? host.readFile(PRESET_FILE) : null);
+    }
+
+    function say(text) {
+        flash = text;
+        flashUntil = host.now() + 1200;
+        dirty = true;
+    }
+
+    function onPreset(slot) {
+        loadPresets();
+        const hat = s.mode === MODE_HAT, v = hat ? 1 : 0;
+        const key = hat ? "h_preset" : "k_preset";
+        if (shiftHeld) {
+            const text = host.getParam(key);
+            if (typeof text !== "string" || !text) { say("SAVE FAILED"); return; }
+            const next = ui.presets.map((a) => a.slice());
+            next[v][slot] = text;
+            if (host.writeFile && host.writeFile(PRESET_FILE, serializePresets(next))) {
+                ui.presets = next;
+                ui.preset[v] = slot;
+                say(`SAVED ${hat ? "HAT" : "KICK"} ${slot + 1}`);
+            } else {
+                say("SAVE FAILED");
+            }
+            return;
+        }
+        const text = ui.presets[v][slot];
+        if (!text) { say(`EMPTY ${slot + 1}  (SHIFT+PAD SAVES)`); return; }
+        set(key, text);
+        ui.preset[v] = slot;
+        readDue = true;
+        say(`${hat ? "HAT" : "KICK"} PRESET ${slot + 1}`);
+    }
+
+    function nextMode() {
+        const hat = s.mode === MODE_HAT;
+        if (s.mode !== MODE_RACK) {
+            const prefix = hat ? "h_" : "k_";
+            if (fillHeld[hat ? 1 : 0]) { set(prefix + "fill", 0); fillHeld[hat ? 1 : 0] = false; }
+            if (hat) stopRecording();
+        }
+        selHeld.analog = selHeld.digital = selHeld.model = false;
+        updateSel();
+        ui.rackHeld = -1;
+        const next = (s.mode + 1) % MODES;
+        set("mode", next);
+        s.mode = next;
+    }
+
+    /* ---- the rack surface ---- */
+    function onRackPad(row, col, down) {
+        const held = ui.rackHeld;
+        if (held >= 0) {
+            /* A pad is held: the other half is its steps. */
+            const step = rackPadStep(held, row, col, s.len);
+            if (step >= 0 || rackStepRows(held).includes(row)) {
+                if (down && step >= 0) {
+                    set("r_step", `${held}:${step}`);
+                    s.rp[held] ^= (1 << step);
+                    readDue = true;
+                }
+                return;
+            }
+            if (!down && rackPadAt(row, col) === held) {
+                ui.rackHeld = -1;
+                /* another pad of the same half may still be down */
+                for (const n of ui.held) {
+                    const q = padAt(n);
+                    const p = q ? rackPadAt(q.row, q.col) : -1;
+                    if (p >= 0) { ui.rackHeld = p; break; }
+                }
+            }
+            return;
+        }
+        if (row === 0 && col === 7) { if (down) nextMode(); return; }
+        const pad = rackPadAt(row, col);
+        if (pad < 0 || !down) return;
+        if (muteHeld) {
+            const on = ((s.rackMute >> pad) & 1) ? 0 : 1;
+            set("r_mute", `${pad}:${on}`);
+            s.rackMute ^= (1 << pad);
+            readDue = true;
+            return;
+        }
+        ui.rackHeld = pad;
+        if (!s.running) set("r_trig", pad);
+    }
+
+    /* ---- pads ---- */
+    function onPad(note, velocity) {
+        const pos0 = padAt(note);
+        if (pos0 && s.mode === MODE_RACK) {
+            const down0 = velocity > 0;
+            if (down0) ui.held.add(note); else ui.held.delete(note);
+            dirty = true;
+            onRackPad(pos0.row, pos0.col, down0);
+            return;
+        }
+        return onVoicePad(note, velocity);
     }
 
     /* Hand the pads back to Move with Move's own colours. */
@@ -314,8 +526,7 @@ export function createUi(host) {
         ui.sel = selHeld.model ? "model" : selHeld.analog ? "analog" : selHeld.digital ? "digital" : null;
     }
 
-    /* ---- pads ---- */
-    function onPad(note, velocity) {
+    function onVoicePad(note, velocity) {
         const pos = padAt(note);
         if (!pos) return;
         const down = velocity > 0;
@@ -326,7 +537,18 @@ export function createUi(host) {
         const prefix = hat ? "h_" : "k_";
 
         if (row === 0) {
-            const role = TOP_ROW[col];
+            const role = TOP_ROWS[hat ? 1 : 0][col];
+            if (role === "analog" || role === "digital" || role === "model") {
+                if (down && role !== "model") {
+                    /* Kick pickers are exclusive: the newest press wins. */
+                    selHeld.analog = role === "analog";
+                    selHeld.digital = role === "digital";
+                } else {
+                    selHeld[role] = down;
+                }
+                updateSel();
+                return;
+            }
             if (role === "fill") {
                 fillHeld[hat ? 1 : 0] = down;
                 set(prefix + "fill", down ? 1 : 0);
@@ -352,40 +574,22 @@ export function createUi(host) {
                 break;
             case "shuffle": set(prefix + "shuffle", 1); readDue = true; break;
             case "random": set(prefix + "random", 1); readDue = true; break;
-            case "toggle": {
-                /* The other voice's surface. Anything held on this one is let go. */
-                if (fillHeld[hat ? 1 : 0]) { set(prefix + "fill", 0); fillHeld[hat ? 1 : 0] = false; }
-                if (hat) stopRecording();
-                selHeld.analog = selHeld.digital = selHeld.model = false;
-                updateSel();
-                const next = hat ? MODE_KICK : MODE_HAT;
-                set("mode", next);
-                s.mode = next;
+            case "offbeat":
+                set("h_offbeat", 1);
+                s.hp = 0x4444;
+                readDue = true;
                 break;
-            }
+            case "toggle":
+                /* The next surface. Anything held on this one is let go. */
+                nextMode();
+                break;
             default: break;                  /* unassigned */
             }
             return;
         }
 
         if (row === 1) {
-            const role = SECOND_ROW[hat ? 1 : 0][col];
-            if (role === "analog" || role === "digital" || role === "model") {
-                if (down && role !== "model") {
-                    /* Kick pickers are exclusive: the newest press wins. */
-                    selHeld.analog = role === "analog";
-                    selHeld.digital = role === "digital";
-                } else {
-                    selHeld[role] = down;
-                }
-                updateSel();
-                return;
-            }
-            if (down && role === "offbeat") {
-                set("h_offbeat", 1);
-                s.hp = 0x4444;
-                readDue = true;
-            }
+            if (down) onPreset(col);
             return;
         }
 
@@ -421,6 +625,19 @@ export function createUi(host) {
 
     /* ---- knobs ---- */
     function onKnobTurn(knob, value) {
+        if (s.mode === MODE_RACK) {
+            /* Hold a rack pad and turn any knob: that pad's volume. */
+            const pad = ui.rackHeld, d = decodeDelta(value);
+            if (pad < 0 || d === 0) return;
+            const now = host.now();
+            const step = knobStep(now - lastTurn[knob]);
+            lastTurn[knob] = now;
+            const v = Math.min(1, Math.max(0, s.rv[pad] + d * step));
+            s.rv[pad] = v;
+            pending.set(`r_vol:${pad}`, v);
+            dirty = true;
+            return;
+        }
         const key = KNOBS[s.mode][knob];
         const d = decodeDelta(value);
         if (!key || d === 0) return;
@@ -436,6 +653,7 @@ export function createUi(host) {
     }
 
     function onKnobTouch(knob, down) {
+        if (s.mode === MODE_RACK) return;
         const now = host.now();
         if (down) {
             touched = knob;
@@ -466,6 +684,8 @@ export function createUi(host) {
             if (d1 <= 7) { onKnobTouch(d1, down); return; }
             return;
         }
+        if (status === 0xB0 && d1 === SHIFT_CC) { shiftHeld = d2 > 0; return; }
+        if (status === 0xB0 && d1 === MUTE_CC) { muteHeld = d2 > 0; return; }
         if (status === 0xB0 && d1 >= KNOB_CC_FIRST && d1 < KNOB_CC_FIRST + 8) {
             onKnobTurn(d1 - KNOB_CC_FIRST, d2);
         } else if (status === 0xB0 && (d1 === JOG_TURN || d1 === JOG_CLICK)) {
@@ -510,8 +730,10 @@ export function createUi(host) {
 
         /* Header: the knob target, inverted, so it reads from across a room. */
         g.fillRect(0, 0, 128, 11, 1);
-        g.print(2, 2, hat ? "HAT" : "KICK", 0);
-        let info = hat ? HAT_MODELS[s.hmodel] || "?"
+        const rack = s.mode === MODE_RACK;
+        g.print(2, 2, rack ? "RACK" : hat ? "HAT" : "KICK", 0);
+        let info = rack ? (ui.rackHeld >= 0 ? `PAD ${ui.rackHeld + 1}` : `${s.len} STEPS`)
+                 : hat ? HAT_MODELS[s.hmodel] || "?"
                        : `${KICK_MODELS[s.kmodel] || "?"}+${digitalName(s, s.ksample)}`;
         if (s.rec && (tickCount >> 4) % 2 === 0) info = "REC " + info;
         g.print(126 - tw(info), 2, info, 0);
@@ -529,6 +751,8 @@ export function createUi(host) {
             dirty = false;
             return;
         }
+
+        if (rack) { drawRack(g, tw); dirty = false; return; }
 
         /* This voice's steps: filled = on, frame = off, underline = playhead.
          * 16 steps are drawn as two rows of 8, as on the pads. */
@@ -550,7 +774,10 @@ export function createUi(host) {
 
         const now = host.now();
         const bigKnob = touched >= 0 ? touched : (now < touchShowUntil ? lastTouchKnob : -1);
-        if (ui.sel) {
+        if (now < flashUntil) {
+            g.fillRect(0, 40, 128, 16, 1);
+            g.print(Math.max(1, Math.floor((128 - tw(flash)) / 2)), 44, flash, 0);
+        } else if (ui.sel) {
             /* A picker is held: the choices, big, the current one inverted. */
             const pick = PICKERS[ui.sel];
             const names = ui.sel === "digital" ? [0, 1, 2, 3].map((i) => digitalName(s, i)) : pick.names;
@@ -602,6 +829,47 @@ export function createUi(host) {
         dirty = false;
     }
 
+    /* The rack: the 6 x 4 block as on the pads, or a held pad's detail. */
+    function drawRack(g, tw) {
+        const held = ui.rackHeld;
+        if (held < 0) {
+            for (let pad = 0; pad < RACK_PADS; pad++) {
+                const x = (pad % RACK_COLS) * 21, y = 13 + Math.floor(pad / RACK_COLS) * 12;
+                const loaded = ((s.rackMask >> pad) & 1) === 1;
+                const muted = ((s.rackMute >> pad) & 1) === 1;
+                const hit = s.running && s.step >= 0 && ((s.rp[pad] >> s.step) & 1) === 1;
+                const label = muted ? "M" : String(pad + 1);
+                if (hit && !muted) {
+                    g.fillRect(x, y, 20, 11, 1);
+                    g.print(x + Math.floor((20 - tw(label)) / 2), y + 2, label, 0);
+                } else {
+                    if (loaded) g.drawRect(x, y, 20, 11, 1);
+                    g.print(x + Math.floor((20 - tw(label)) / 2), y + 2, loaded || muted ? label : "-", 1);
+                }
+            }
+            if (host.now() < flashUntil) {
+                g.fillRect(0, 40, 128, 16, 1);
+                g.print(Math.max(1, Math.floor((128 - tw(flash)) / 2)), 44, flash, 0);
+            }
+            return;
+        }
+        const loaded = ((s.rackMask >> held) & 1) === 1;
+        const muted = ((s.rackMute >> held) & 1) === 1;
+        g.print(0, 14, loaded ? `Rack/${String(held + 1).padStart(2, "0")}.wav` : "NO SAMPLE", 1);
+        if (muted) { g.fillRect(114, 13, 14, 10, 1); g.print(117, 14, "M", 0); }
+        const p = s.rp[held];
+        for (let i = 0; i < s.len; i++) {
+            const x = 9 + (i % 8) * 13, y = s.len === 16 ? (i < 8 ? 25 : 36) : 28;
+            if ((p >> i) & 1) g.fillRect(x, y, 11, 8, 1); else g.drawRect(x, y, 11, 8, 1);
+            if (s.running && s.step === i) g.fillRect(x, y + 9, 11, 1, 1);
+        }
+        const v = s.rv[held];
+        const pct = `VOL ${Math.round(v * 100)}%`;
+        g.print(0, 50, pct, 1);
+        g.drawRect(52, 50, 76, 7, 1);
+        g.fillRect(54, 52, Math.round(72 * v), 3, 1);
+    }
+
     /* ---- lifecycle ---- */
     function init() {
         refresh();
@@ -640,7 +908,7 @@ export function createUi(host) {
         }
         if (readDue || tickCount % READ_EVERY_TICKS === 0) refresh();
         paintLeds();
-        if (dirty || (s.rec) || now < touchShowUntil + 50) draw();
+        if (dirty || s.rec || s.running || now < touchShowUntil + 50 || now < flashUntil + 50) draw();
     }
 
     /* Back leaves the module: tidy up, then let the host navigate. */

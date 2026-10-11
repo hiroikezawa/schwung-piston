@@ -23,9 +23,17 @@
 #define HKH_USER_MAX_SAMPLES (44100 * 2)          /* 2 s per slot */
 #define HKH_USER_DIR "/data/UserData/UserLibrary/Samples/Piston"
 
+/* The drum rack (jog page / RACK surface): 24 one-shots, read from
+ *   <user dir>/Rack/01.wav .. 24.wav
+ * by the same worker after the kicks. A missing file is a silent pad. */
+#define HKH_RACK_VOICES 24
+#define HKH_RACK_MAX_SAMPLES (44100 * 3 / 2)     /* 1.5 s per pad */
+
 typedef struct {
     int16_t data[HKH_SAMPLE_SLOTS][HKH_USER_MAX_SAMPLES];
     atomic_int len[HKH_SAMPLE_SLOTS];   /* 0 = use the built-in kick */
+    int16_t rack[HKH_RACK_VOICES][HKH_RACK_MAX_SAMPLES];
+    atomic_int rack_len[HKH_RACK_VOICES];   /* 0 = no sample on that pad */
     atomic_int stop;
     atomic_int done;
     int started;
@@ -44,6 +52,9 @@ void hkh_samples_stop(hkh_sample_bank *b);
 /* RT-safe. `bank` may be NULL (built-ins only). */
 hkh_sample_ref hkh_samples_get(void *bank, int index);
 int hkh_samples_user_mask(hkh_sample_bank *b);
+/* RT-safe. An empty pad answers len 0. */
+hkh_sample_ref hkh_samples_rack_get(void *bank, int index);
+int hkh_samples_rack_mask(hkh_sample_bank *b);
 hkh_sample_ref hkh_default_sample(int index);
 const char *hkh_default_sample_name(int index);
 
@@ -53,5 +64,8 @@ const char *hkh_default_sample_name(int index);
  * fade, loudness-matches it to the analog kicks (first 150 ms RMS 0.35, peak
  * <= 0.95) with its first big excursion positive. Returns the length, or 0. */
 int hkh_wav_load(const char *path, int16_t *dst, int max, atomic_int *stop);
+/* The rack's variant: no loudness match and no polarity flip -- a pad keeps
+ * its own level and is only scaled DOWN if it peaks above 0.95. */
+int hkh_wav_load_natural(const char *path, int16_t *dst, int max, atomic_int *stop);
 
 #endif

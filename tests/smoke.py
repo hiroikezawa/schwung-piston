@@ -81,7 +81,7 @@ def block(inst=None):
 
 def ui_state(inst=None):
     f = read("ui_state", inst=inst).split(",")
-    assert f[0] == "2" and len(f) == 18 + 14 + 16 + 2, f
+    assert f[0] == "3" and len(f) == 18 + 14 + 16 + 2 + 2 + 48, f
     return [int(x) for x in f]
 
 
@@ -197,6 +197,45 @@ write("state", old, inst=other)
 d = json.loads(read("state", inst=other))
 assert d["kp"] == 17 and d["len"] == 8 and d["mo"][0] == 0.5 and d["mo"][8] == -1, d
 destroy(other)
+
+# --- presets: one voice's sound + pattern, the other voice untouched ------------
+pr = create(b".", None)
+assert pr
+write("k_model", 2, inst=pr); write("k_vol", 0.33, inst=pr); write("k_pattern", 0x00F0, inst=pr)
+kp_text = read("k_preset", inst=pr)
+hp_text = read("h_preset", inst=pr)
+assert kp_text.startswith("2,0,240,0.3300"), kp_text
+assert len(hp_text.split(",")) == 2 + 7 + 16, hp_text
+write("k_model", 0, inst=pr); write("k_vol", 0.9, inst=pr); write("k_pattern", 1, inst=pr)
+write("h_pattern", 0x0F0F, inst=pr)
+write("k_preset", kp_text, inst=pr)
+s2 = ui_state(pr)
+assert s2[11] == 2 and s2[3] == 0xF0 and s2[18] == 330 and s2[4] == 0x0F0F, s2[:20]
+for bad in ["", "1,2", kp_text + ",1", kp_text.replace("2,", "7,", 1), "x" + kp_text]:
+    write("k_preset", bad, inst=pr)
+    assert read("k_preset", inst=pr) == kp_text, bad
+write("h_pattern", 1, inst=pr)
+write("h_preset", hp_text, inst=pr)
+assert read("h_preset", inst=pr) == hp_text and ui_state(pr)[4] == 0x4444
+
+# --- rack: steps, mute, volume, state ------------------------------------------
+write("r_step", "3:2", inst=pr)
+write("r_step", "23:15", inst=pr)          # beyond 8 steps: refused
+write("r_mute", "5:1", inst=pr)
+write("r_vol", "7:0.25", inst=pr)
+for bad in ["24:1", "-1:1", "3", "3:x", "3:99"]:
+    write("r_step", bad, inst=pr)
+s2 = ui_state(pr)
+assert s2[52 + 3] == 4 and s2[52 + 23] == 0 and s2[51] == 1 << 5 and s2[76 + 7] == 250, s2[50:]
+doc = json.loads(read("state", inst=pr))
+assert doc["rp"][3] == 4 and abs(doc["rv"][7] - 0.25) < 1e-4
+write("mode", 2, inst=pr)
+assert ui_state(pr)[14] == 2
+q = create(b".", None)
+write("state", read("state", inst=pr), inst=q)
+assert ui_state(q)[52 + 3] == 4 and ui_state(q)[76 + 7] == 250 and ui_state(q)[14] == 2
+destroy(q)
+destroy(pr)
 
 # --- MIDI notes -----------------------------------------------------------------
 transport["beat"] = -1.0

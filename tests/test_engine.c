@@ -1009,6 +1009,55 @@ static void test_sixteen(void) {
     printf("PASS: 16 steps: carries the groove over, halves shuffle/random, fill, back to 8\n");
 }
 
+static int16_t RACK_CLICK[400];
+static hkh_sample_ref rack_src(void *ctx, int pad) {
+    (void)ctx;
+    hkh_sample_ref r = { NULL, 0 };
+    if (pad == 4) return r;                      /* an empty pad */
+    r.data = RACK_CLICK; r.len = 400;
+    return r;
+}
+
+static float energy(hkh_engine *e, transport *t) {
+    render(e, t);
+    float sum = 0.0f;
+    for (int i = 0; i < BLOCK; ++i) sum += L[i] * L[i];
+    return sum;
+}
+
+static void test_rack(void) {
+    for (int i = 0; i < 400; ++i) RACK_CLICK[i] = 16000;
+    transport t = {0.0, 120.0f, 1};
+    hkh_engine_init(&E, 41);
+    hkh_engine_set_rack_source(&E, rack_src, NULL);
+    E.k_pattern = E.h_pattern = 0;
+    hkh_engine_rack_toggle_step(&E, 0, 0);
+    hkh_engine_rack_toggle_step(&E, 1, 2);
+    hkh_engine_rack_toggle_step(&E, 4, 1);       /* empty pad: never sounds */
+    hkh_engine_rack_toggle_step(&E, 2, 9);       /* beyond 8 steps: refused */
+    assert(E.r_pattern[0] == 1 && E.r_pattern[1] == 4 && E.r_pattern[2] == 0);
+    hkh_engine_rack_set_mute(&E, 1, 1);
+    E.seq.running = 0; t.beat = 0.0;
+    E.r_pending = 0;                             /* drop the toggle auditions */
+    E.r_hits = 0;
+    run(&E, &t, blocks_for_steps(120, 8) - 1);
+    assert(E.r_hits == 1);                       /* pad 0 only: 1 muted, 4 empty */
+    hkh_engine_rack_set_mute(&E, 1, 0);
+    hkh_engine_rack_set_vol(&E, 0, 0.0f);
+    hkh_engine_set_length(&E, 16);
+    assert(E.r_pattern[0] == 0x0101 && E.r_pattern[1] == 0x0404);
+    /* Stopped: a trigger auditions, at the pad's volume (0 -> silence). */
+    t.running = 0; render(&E, &t);
+    for (int i = 0; i < 80; ++i) render(&E, &t);
+    hkh_engine_rack_trigger(&E, 0);
+    float e0 = 0; for (int i = 0; i < 4; ++i) e0 += energy(&E, &t);
+    hkh_engine_rack_trigger(&E, 3);
+    float e3 = 0; for (int i = 0; i < 4; ++i) e3 += energy(&E, &t);
+    if (!(e0 < 1e-3f && e3 > 1.0f)) fprintf(stderr, "e0 %g e3 %g\n", e0, e3);
+    assert(e0 < 1e-3f && e3 > 1.0f);
+    printf("PASS: rack: per-pad steps, mute, empty pads, volume, 16-step carry\n");
+}
+
 int main(void) {
     test_seq_timing();
     test_seq_edges();
@@ -1032,6 +1081,7 @@ int main(void) {
     test_shuffle();
     test_fill();
     test_sixteen();
+    test_rack();
     const char *dir = getenv("HKH_TEST_DIR");
     assert(dir && dir[0]);
     test_wav_loader(dir);

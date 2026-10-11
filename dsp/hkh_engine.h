@@ -21,7 +21,13 @@ enum { KICK_808, KICK_909, KICK_IND, KICK_MODEL_COUNT };
 enum { HAT_808, HAT_909, HAT_METAL, HAT_IND, HAT_MODEL_COUNT };
 #define HKH_DIGITAL_COUNT 4
 
-enum { MODE_KICK = 0, MODE_HAT = 1 };
+enum { MODE_KICK = 0, MODE_HAT = 1, MODE_RACK = 2, MODE_COUNT = 3 };
+
+/* The drum rack: 24 one-shot pads, each with its own step pattern, mute and
+ * volume, sharing the kick/hat sequencer's clock and length. */
+#define HKH_RACK 24
+#define HKH_RACK_DEFAULT_VOL 0.8f
+typedef struct { const int16_t *data; int len, pos; float vel; } hkh_rack_voice;
 
 #define HKH_KICK_DEFAULT_PATTERN 0x1111u /* steps 1, 5 (9, 13) */
 #define HKH_HAT_DEFAULT_PATTERN  0x4444u /* steps 3, 7 (11, 15): the offbeat */
@@ -58,6 +64,16 @@ typedef struct {
 
     hkh_sample_source samples;
     void *samples_ctx;
+    hkh_sample_source rack_samples;   /* pad i -> its sample (len 0 = empty) */
+    void *rack_ctx;
+
+    uint16_t r_pattern[HKH_RACK];
+    uint8_t r_mute[HKH_RACK];
+    float r_vol[HKH_RACK];         /* 0..1, as set */
+    float r_gain[HKH_RACK];        /* smoothed linear gain */
+    hkh_rack_voice rack[HKH_RACK];
+    uint32_t r_pending;            /* auditions, bit per pad */
+    unsigned r_hits;
 
     unsigned fault_count;          /* non-finite output caught and zeroed */
     unsigned k_hits, h_hits;       /* hits actually fired (diagnostics, tests) */
@@ -69,6 +85,14 @@ typedef struct {
  * nothing is allocated, here or anywhere on the audio thread. */
 void hkh_engine_init(hkh_engine *e, uint32_t seed);
 void hkh_engine_set_sample_source(hkh_engine *e, hkh_sample_source fn, void *ctx);
+void hkh_engine_set_rack_source(hkh_engine *e, hkh_sample_source fn, void *ctx);
+
+/* Rack pads. `audition` on a step that turned on / a trigger plays the pad
+ * once when the transport is stopped. */
+void hkh_engine_rack_toggle_step(hkh_engine *e, int pad, int step);
+void hkh_engine_rack_set_mute(hkh_engine *e, int pad, int on);
+void hkh_engine_rack_set_vol(hkh_engine *e, int pad, float vol);
+void hkh_engine_rack_trigger(hkh_engine *e, int pad);
 
 /* Continuous parameters. */
 void hkh_engine_set_param(hkh_engine *e, int index, float value);

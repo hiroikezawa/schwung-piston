@@ -69,7 +69,33 @@ static int16_t to16(float x) {
     return (int16_t)lrintf(x * 32767.0f);
 }
 
+static int wav_load(const char *path, int16_t *dst, int max, atomic_int *stop, int match);
+
 int hkh_wav_load(const char *path, int16_t *dst, int max, atomic_int *stop) {
+    return wav_load(path, dst, max, stop, 1);
+}
+
+int hkh_wav_load_natural(const char *path, int16_t *dst, int max, atomic_int *stop) {
+    return wav_load(path, dst, max, stop, 0);
+}
+
+hkh_sample_ref hkh_samples_rack_get(void *bank, int index) {
+    hkh_sample_ref r = { NULL, 0 };
+    hkh_sample_bank *b = bank;
+    if (!b || index < 0 || index >= HKH_RACK_VOICES) return r;
+    int n = atomic_load_explicit(&b->rack_len[index], memory_order_acquire);
+    if (n > 0) { r.data = b->rack[index]; r.len = n; }
+    return r;
+}
+
+int hkh_samples_rack_mask(hkh_sample_bank *b) {
+    int mask = 0;
+    for (int i = 0; b && i < HKH_RACK_VOICES; ++i)
+        if (atomic_load_explicit(&b->rack_len[i], memory_order_acquire) > 0) mask |= 1 << i;
+    return mask;
+}
+
+static int wav_load(const char *path, int16_t *dst, int max, atomic_int *stop, int match) {
     if (!path || !dst || max < 64) return 0;
     FILE *f = fopen(path, "rb");
     if (!f) return 0;
@@ -159,8 +185,9 @@ int hkh_wav_load(const char *path, int16_t *dst, int max, atomic_int *stop) {
     for (int i = 0; i < n_out; ++i)
         if (abs(dst[i]) * 4 >= peak) { first = dst[i]; break; }
     float rms = (float)sqrt(sum / head) / 32767.0f;
-    float scale = fminf(HKH_TARGET_RMS / rms, HKH_PEAK_CAP * 32767.0f / (float)peak);
-    if (first < 0) scale = -scale;
+    float cap = HKH_PEAK_CAP * 32767.0f / (float)peak;
+    float scale = match ? fminf(HKH_TARGET_RMS / rms, cap) : fminf(1.0f, cap);
+    if (match && first < 0) scale = -scale;
     for (int i = 0; i < n_out; ++i) dst[i] = to16((float)dst[i] * scale * (1.0f / 32767.0f));
     if (n_out == max) {                 /* truncated: fade the cut */
         int fade = n_out < 220 ? n_out : 220;
@@ -200,6 +227,13 @@ static void *loader_main(void *arg) {
         }
         if (n > 0) atomic_store_explicit(&b->len[i], n, memory_order_release);
     }
+    for (int i = 0; i < HKH_RACK_VOICES && b->user_dir[0]; ++i) {
+        if (atomic_load(&b->stop)) break;
+        char path[256];
+        snprintf(path, sizeof(path), "%s/Rack/%02d.wav", b->user_dir, i + 1);
+        int n = hkh_wav_load_natural(path, b->rack[i], HKH_RACK_MAX_SAMPLES, &b->stop);
+        if (n > 0) atomic_store_explicit(&b->rack_len[i], n, memory_order_release);
+    }
     atomic_store(&b->done, 1);
     return NULL;
 }
@@ -214,6 +248,7 @@ static void copy_dir(char *dst, size_t size, const char *src) {
 
 void hkh_samples_start(hkh_sample_bank *b, const char *user_dir, const char *module_dir) {
     for (int i = 0; i < HKH_SAMPLE_SLOTS; ++i) atomic_store(&b->len[i], 0);
+    for (int i = 0; i < HKH_RACK_VOICES; ++i) atomic_store(&b->rack_len[i], 0);
     atomic_store(&b->stop, 0);
     atomic_store(&b->done, 0);
     b->started = 0;

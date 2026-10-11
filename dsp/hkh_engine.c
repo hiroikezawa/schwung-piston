@@ -44,6 +44,11 @@ static float hat_vol_gain(float v) { return 8.0f * v * v; }
 static float kick_send_gain(float v) { return 3.0f * v * v; }
 static float hat_send_gain(float v) { return 0.9f * v * v; }
 
+/* Rack pad volume: squared taper, unity at full. Samples keep their own
+ * level (only peaks above 0.95 are scaled down at load). */
+static float rack_vol_gain(float v) { return v * v; }
+#define RACK_CEILING 0.9f
+
 static void voices_init(hkh_engine *e) {
     hkh_voices *v = &e->voices;
     memset(v, 0, sizeof(*v));
@@ -114,9 +119,15 @@ static void voices_block(hkh_engine *e, int frames) {
  * send effects parked, the output already settled to zero. The keepalive
  * means the host calls us every block even when stopped, so this is the
  * cost of an idle module. */
+static int rack_active(const hkh_engine *e) {
+    for (int i = 0; i < HKH_RACK; ++i)
+        if (e->rack[i].data && e->rack[i].pos < e->rack[i].len) return 1;
+    return 0;
+}
+
 static int voices_silent(const hkh_engine *e) {
     const hkh_voices *v = &e->voices;
-    return !hkh_akick_active(&v->akick) && !hkh_digital_active(&v->dkick) &&
+    return !rack_active(e) && !hkh_akick_active(&v->akick) && !hkh_digital_active(&v->dkick) &&
            !hkh_hat_active(&v->hat) &&
            v->rumble.quiet >= (1 << 20) && v->rumble.amount < 0.001f &&
            v->reverb.quiet >= 44100 * 3 &&
@@ -147,7 +158,19 @@ static void voices_tick(hkh_engine *e, float *l, float *r) {
      * a maxed, compressed, rumbling kick can never bury the hat or pull it
      * down through the output limiter. */
     float kb = hkh_tanh((k + rumble) * (1.0f / KICK_CEILING)) * KICK_CEILING;
-    float outl = kb + h + rl, outr = kb + h + rr;
+    /* The rack: a plain sum of one-shots, soft-clipped as its own bus. */
+    float rs = 0.0f;
+    for (int i = 0; i < HKH_RACK; ++i) {
+        hkh_rack_voice *rv = &e->rack[i];
+        if (!rv->data || rv->pos >= rv->len) continue;
+        float x = (float)rv->data[rv->pos++] * (1.0f / 32767.0f);
+        /* the last 2 ms fade, so a sample that stops off zero cannot click */
+        int left = rv->len - rv->pos;
+        if (left < 88) x *= (float)left * (1.0f / 88.0f);
+        rs += x * rv->vel * e->r_gain[i];
+    }
+    if (rs != 0.0f) rs = hkh_tanh(rs * (1.0f / RACK_CEILING)) * RACK_CEILING;
+    float outl = kb + h + rl + rs, outr = kb + h + rr + rs;
     hkh_limiter_tick(&v->limiter, &outl, &outr);
     *l = outl;
     *r = outr;
@@ -164,6 +187,10 @@ void hkh_engine_init(hkh_engine *e, uint32_t seed) {
     e->k_pattern = HKH_KICK_DEFAULT_PATTERN;
     e->h_pattern = HKH_HAT_DEFAULT_PATTERN;
     for (int i = 0; i < HKH_STEPS; ++i) e->motion[i] = HKH_MOTION_NONE;
+    for (int i = 0; i < HKH_RACK; ++i) {
+        e->r_vol[i] = HKH_RACK_DEFAULT_VOL;
+        e->r_gain[i] = rack_vol_gain(HKH_RACK_DEFAULT_VOL);
+    }
     e->rng = seed ? seed : 0x9E3779B9u;
     e->pending_h_decay = -1.0f;
     e->k_ratchet_in = e->h_ratchet_in = -1;
@@ -174,6 +201,45 @@ void hkh_engine_init(hkh_engine *e, uint32_t seed) {
 void hkh_engine_set_sample_source(hkh_engine *e, hkh_sample_source fn, void *ctx) {
     e->samples = fn;
     e->samples_ctx = ctx;
+}
+
+void hkh_engine_set_rack_source(hkh_engine *e, hkh_sample_source fn, void *ctx) {
+    e->rack_samples = fn;
+    e->rack_ctx = ctx;
+}
+
+static void fire_rack(hkh_engine *e, int pad) {
+    if (e->r_mute[pad] || !e->rack_samples) return;
+    hkh_sample_ref r = e->rack_samples(e->rack_ctx, pad);
+    if (!r.data || r.len <= 0) return;
+    ++e->r_hits;
+    hkh_rack_voice *v = &e->rack[pad];
+    v->data = r.data;
+    v->len = r.len;
+    v->pos = 0;
+    v->vel = 1.0f;
+}
+
+void hkh_engine_rack_trigger(hkh_engine *e, int pad) {
+    if (pad < 0 || pad >= HKH_RACK) return;
+    e->r_pending |= 1u << pad;
+}
+
+void hkh_engine_rack_toggle_step(hkh_engine *e, int pad, int step) {
+    if (pad < 0 || pad >= HKH_RACK || step < 0 || step >= e->seq.length) return;
+    e->r_pattern[pad] ^= (uint16_t)(1u << step);
+    if (((e->r_pattern[pad] >> step) & 1u) && !e->seq.running) hkh_engine_rack_trigger(e, pad);
+}
+
+void hkh_engine_rack_set_mute(hkh_engine *e, int pad, int on) {
+    if (pad < 0 || pad >= HKH_RACK) return;
+    e->r_mute[pad] = on ? 1 : 0;
+    if (on) e->rack[pad].pos = e->rack[pad].len;     /* choke */
+}
+
+void hkh_engine_rack_set_vol(hkh_engine *e, int pad, float vol) {
+    if (pad < 0 || pad >= HKH_RACK || !isfinite(vol)) return;
+    e->r_vol[pad] = hkh_clamp(vol, 0.0f, 1.0f);
 }
 
 void hkh_engine_set_param(hkh_engine *e, int index, float value) {
@@ -255,6 +321,8 @@ void hkh_engine_set_mute(hkh_engine *e, int hat, int on) {
 void hkh_engine_all_sound_off(hkh_engine *e) {
     voices_choke(e, 0);
     voices_choke(e, 1);
+    for (int i = 0; i < HKH_RACK; ++i) e->rack[i].pos = e->rack[i].len;
+    e->r_pending = 0;
     e->k_ratchet_in = e->h_ratchet_in = -1;
     e->pending_k = e->pending_h = 0;
 }
@@ -323,6 +391,8 @@ void hkh_engine_set_length(hkh_engine *e, int steps) {
         e->k_pattern = (uint16_t)((e->k_pattern & 0xFF) | ((e->k_pattern & 0xFF) << 8));
         e->h_pattern = (uint16_t)((e->h_pattern & 0xFF) | ((e->h_pattern & 0xFF) << 8));
         for (int i = 0; i < 8; ++i) e->motion[i + 8] = e->motion[i];
+        for (int i = 0; i < HKH_RACK; ++i)
+            e->r_pattern[i] = (uint16_t)((e->r_pattern[i] & 0xFF) | ((e->r_pattern[i] & 0xFF) << 8));
     }
     e->seq.length = steps;
 }
@@ -380,6 +450,8 @@ static void on_step(hkh_engine *e, int step) {
             e->h_ratchet_decay = d;
         }
     }
+    for (int i = 0; i < HKH_RACK; ++i)
+        if ((e->r_pattern[i] >> step) & 1u) fire_rack(e, i);
 }
 
 static void age_heartbeats(hkh_engine *e, int frames) {
@@ -408,6 +480,13 @@ void hkh_engine_render(hkh_engine *e, float *out_l, float *out_r, int frames,
         float d = e->pending_h_decay >= 0.0f ? e->pending_h_decay : e->param[P_H_DECAY];
         fire_hat(e, e->pending_h_vel, d, e->pending_h_decay < 0.0f);
     }
+    if (e->r_pending) {
+        uint32_t m = e->r_pending;
+        e->r_pending = 0;
+        for (int i = 0; i < HKH_RACK; ++i) if ((m >> i) & 1u) fire_rack(e, i);
+    }
+    for (int i = 0; i < HKH_RACK; ++i)
+        e->r_gain[i] += (rack_vol_gain(e->r_vol[i]) - e->r_gain[i]) * BLOCK_SMOOTH;
 
     /* Idle fast path: nothing is sounding and nothing will start this block
      * (no step, no ratchet, no audition). Ramps and smoothing still ran in

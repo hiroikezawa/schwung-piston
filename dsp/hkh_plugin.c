@@ -19,7 +19,7 @@ _Static_assert(ATOMIC_INT_LOCK_FREE == 2, "instance pool needs lock-free atomics
 
 /* Four chain slots can each hold one; two spare cover a swap in flight. */
 #define HKH_INSTANCES 6
-#define HKH_DSP_BUILD 208          /* major*10000 + minor*100 + patch: 0.2.8; bump with module.json */
+#define HKH_DSP_BUILD 300          /* major*10000 + minor*100 + patch: 0.3.0; bump with module.json */
 
 /* The shim parks a slot whose output stays below 5 LSB for ~1 s and renders
  * it only once every ~0.5 s after that (schwung_shim.c, DSP_IDLE_THRESHOLD).
@@ -61,6 +61,7 @@ static void *create_instance(const char *module_dir, const char *defaults) {
             inst->clk_running = inst->clk_awaiting = 0;
             inst->clk_ticks = 0;
             hkh_engine_set_sample_source(&inst->engine, hkh_samples_get, &inst->bank);
+            hkh_engine_set_rack_source(&inst->engine, hkh_samples_rack_get, &inst->bank);
             hkh_samples_start(&inst->bank, HKH_USER_DIR, module_dir);
             return inst;
         }
@@ -146,7 +147,7 @@ static int parse_int(const char *s, int lo, int hi, int *out) {
  * truncated or foreign blob can never leave the instance half-restored. The
  * chain host hands this back compacted, but pretty-printed input is accepted.
  * Mute, FILL and motion-record are performance gestures and are not saved. */
-#define HKH_STATE_MAX 2048
+#define HKH_STATE_MAX 8192
 
 static const char *find_key(const char *s, const char *key) {
     size_t n = strlen(key);
@@ -219,7 +220,7 @@ static int restore_state(hkh_engine *e, const char *text) {
     if (*p != '{') return 0;
     float v, mode, km, ks, hm, kp, hp, len = 8.0f, prm[P_COUNT], mo[HKH_STEPS];
     if (!read_key_number(p, "v", &v) || v != 1.0f) return 0;
-    if (!read_key_number(p, "mode", &mode) || !in_int_range(mode, 0, 1)) return 0;
+    if (!read_key_number(p, "mode", &mode) || !in_int_range(mode, 0, MODE_COUNT - 1)) return 0;
     if (!read_key_number(p, "km", &km) || !in_int_range(km, 0, KICK_MODEL_COUNT - 1)) return 0;
     if (!read_key_number(p, "ks", &ks) || !in_int_range(ks, 0, HKH_DIGITAL_COUNT - 1)) return 0;
     if (!read_key_number(p, "hm", &hm) || !in_int_range(hm, 0, HAT_MODEL_COUNT - 1)) return 0;
@@ -234,6 +235,14 @@ static int restore_state(hkh_engine *e, const char *text) {
     for (int i = 0; i < P_COUNT; ++i) if (prm[i] < 0.0f || prm[i] > 1.0f) return 0;
     for (int i = 0; i < HKH_STEPS; ++i)
         if (!(mo[i] == HKH_MOTION_NONE || (mo[i] >= 0.0f && mo[i] <= 1.0f))) return 0;
+    /* The rack arrived in 0.3.0; older states simply have none. */
+    float rp[HKH_RACK], rv[HKH_RACK];
+    int has_rack = find_key(p, "rp") != NULL;
+    if (has_rack) {
+        if (!read_key_array(p, "rp", rp, HKH_RACK) || !read_key_array(p, "rv", rv, HKH_RACK)) return 0;
+        for (int i = 0; i < HKH_RACK; ++i)
+            if (!in_int_range(rp[i], 0, 65535) || rv[i] < 0.0f || rv[i] > 1.0f) return 0;
+    }
     /* All valid: apply. */
     e->mode = (int)mode;
     e->k_model = (int)km;
@@ -244,6 +253,86 @@ static int restore_state(hkh_engine *e, const char *text) {
     e->seq.length = (int)len;
     for (int i = 0; i < P_COUNT; ++i) hkh_engine_set_param(e, i, prm[i]);
     for (int i = 0; i < HKH_STEPS; ++i) e->motion[i] = mo[i];
+    for (int i = 0; has_rack && i < HKH_RACK; ++i) {
+        e->r_pattern[i] = (uint16_t)rp[i];
+        e->r_vol[i] = rv[i];
+    }
+    return 1;
+}
+
+/* ---- presets --------------------------------------------------------------
+ * One voice's sound and pattern as a flat CSV the UI files away and hands
+ * back. Mute and FILL are performance state and are not part of it.
+ *   kick: km,ks,kp,<7 kick params>
+ *   hat:  hm,hp,<7 hat params>,<16 motion, -1 none>
+ * Applied only if every field parses, like the state blob. */
+#define KICK_PRESET_FIELDS (3 + 7)
+#define HAT_PRESET_FIELDS (2 + 7 + HKH_STEPS)
+
+static int read_csv(const char *s, float *out, int count) {
+    const char *p = skip_ws(s);
+    for (int i = 0; i < count; ++i) {
+        p = read_number(p, &out[i]);
+        if (!p) return 0;
+        p = skip_ws(p);
+        if (i < count - 1) { if (*p != ',') return 0; p = skip_ws(p + 1); }
+    }
+    return *p == 0;
+}
+
+static int apply_kick_preset(hkh_engine *e, const char *text) {
+    float f[KICK_PRESET_FIELDS];
+    if (!read_csv(text, f, KICK_PRESET_FIELDS)) return 0;
+    if (!in_int_range(f[0], 0, KICK_MODEL_COUNT - 1) || !in_int_range(f[1], 0, HKH_DIGITAL_COUNT - 1) ||
+        !in_int_range(f[2], 0, 65535)) return 0;
+    for (int i = 3; i < KICK_PRESET_FIELDS; ++i) if (f[i] < 0.0f || f[i] > 1.0f) return 0;
+    e->k_model = (int)f[0];
+    e->k_sample = (int)f[1];
+    e->k_pattern = (uint16_t)f[2];
+    for (int i = 0; i < 7; ++i) hkh_engine_set_param(e, P_K_VOL + i, f[3 + i]);
+    return 1;
+}
+
+static int apply_hat_preset(hkh_engine *e, const char *text) {
+    float f[HAT_PRESET_FIELDS];
+    if (!read_csv(text, f, HAT_PRESET_FIELDS)) return 0;
+    if (!in_int_range(f[0], 0, HAT_MODEL_COUNT - 1) || !in_int_range(f[1], 0, 65535)) return 0;
+    for (int i = 2; i < 9; ++i) if (f[i] < 0.0f || f[i] > 1.0f) return 0;
+    for (int i = 9; i < HAT_PRESET_FIELDS; ++i)
+        if (!(f[i] == HKH_MOTION_NONE || (f[i] >= 0.0f && f[i] <= 1.0f))) return 0;
+    e->h_model = (int)f[0];
+    e->h_pattern = (uint16_t)f[1];
+    e->motion_rec = 0;
+    for (int i = 0; i < 7; ++i) hkh_engine_set_param(e, P_H_VOL + i, f[2 + i]);
+    for (int i = 0; i < HKH_STEPS; ++i) e->motion[i] = f[9 + i];
+    return 1;
+}
+
+static int write_kick_preset(const hkh_engine *e, char *buf, int size) {
+    int n = snprintf(buf, size, "%d,%d,%d", e->k_model, e->k_sample, e->k_pattern);
+    for (int i = 0; i < 7 && n > 0 && n < size; ++i)
+        n += snprintf(buf + n, size - n, ",%.4f", e->param[P_K_VOL + i]);
+    if (n < 0 || n >= size) { buf[0] = 0; return -1; }
+    return n;
+}
+
+static int write_hat_preset(const hkh_engine *e, char *buf, int size) {
+    int n = snprintf(buf, size, "%d,%d", e->h_model, e->h_pattern);
+    for (int i = 0; i < 7 && n > 0 && n < size; ++i)
+        n += snprintf(buf + n, size - n, ",%.4f", e->param[P_H_VOL + i]);
+    for (int i = 0; i < HKH_STEPS && n > 0 && n < size; ++i)
+        n += snprintf(buf + n, size - n, ",%.4f", e->motion[i] >= 0.0f ? e->motion[i] : -1.0f);
+    if (n < 0 || n >= size) { buf[0] = 0; return -1; }
+    return n;
+}
+
+/* "a:b" -> pad a (0..23) and the number after the colon. */
+static int parse_pad_value(const char *s, int *pad, float *value) {
+    char *end;
+    long a = strtol(s, &end, 10);
+    if (end == s || *end != ':' || a < 0 || a >= HKH_RACK) return 0;
+    if (!parse_float(end + 1, value)) return 0;
+    *pad = (int)a;
     return 1;
 }
 
@@ -251,13 +340,26 @@ static void set_param(void *ptr, const char *key, const char *val) {
     if (!ptr || !key || !val) return;
     hkh_engine *e = &((hkh_instance *)ptr)->engine;
     if (!strcmp(key, "state")) { (void)restore_state(e, val); return; }
+    if (!strcmp(key, "k_preset")) { (void)apply_kick_preset(e, val); return; }
+    if (!strcmp(key, "h_preset")) { (void)apply_hat_preset(e, val); return; }
+    if (!strncmp(key, "r_", 2)) {
+        int pad;
+        float f;
+        if (!strcmp(key, "r_trig")) { int n; if (parse_int(val, 0, HKH_RACK - 1, &n)) hkh_engine_rack_trigger(e, n); return; }
+        if (!parse_pad_value(val, &pad, &f)) return;
+        if (!strcmp(key, "r_step")) { if (in_int_range(f, 0, HKH_STEPS - 1)) hkh_engine_rack_toggle_step(e, pad, (int)f); }
+        else if (!strcmp(key, "r_mute")) { if (in_int_range(f, 0, 1)) hkh_engine_rack_set_mute(e, pad, (int)f); }
+        else if (!strcmp(key, "r_vol")) hkh_engine_rack_set_vol(e, pad, f);
+        else if (!strcmp(key, "r_pattern")) { if (in_int_range(f, 0, 65535)) e->r_pattern[pad] = (uint16_t)f; }
+        return;
+    }
 
     int idx = param_index(key);
     float f;
     int n;
     if (idx >= 0) { if (parse_float(val, &f)) hkh_engine_set_param(e, idx, f); return; }
 
-    if (!strcmp(key, "mode")) { if (parse_int(val, 0, 1, &n)) e->mode = n; }
+    if (!strcmp(key, "mode")) { if (parse_int(val, 0, MODE_COUNT - 1, &n)) e->mode = n; }
     else if (!strcmp(key, "k_model")) { if (parse_int(val, 0, KICK_MODEL_COUNT - 1, &n)) hkh_engine_set_kick_model(e, n, 0); }
     else if (!strcmp(key, "k_sample")) { if (parse_int(val, 0, HKH_DIGITAL_COUNT - 1, &n)) hkh_engine_set_kick_sample(e, n, 0); }
     else if (!strcmp(key, "h_model")) { if (parse_int(val, 0, HAT_MODEL_COUNT - 1, &n)) hkh_engine_set_hat_model(e, n, 0); }
@@ -295,7 +397,7 @@ static int milli(float v) { return (int)lroundf(hkh_clamp(v, 0.0f, 1.0f) * 1000.
 /* One read gives the UI everything it draws: see ui_core.mjs parseUiState. */
 static int write_ui_state(hkh_instance *inst, char *buf, int size) {
     const hkh_engine *e = &inst->engine;
-    int n = snprintf(buf, size, "2,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d",
+    int n = snprintf(buf, size, "3,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d",
                      e->seq.running, e->seq.cur_step,
                      e->k_pattern, e->h_pattern,
                      hkh_engine_effective_pattern(e, 0), hkh_engine_effective_pattern(e, 1),
@@ -311,6 +413,16 @@ static int write_ui_state(hkh_instance *inst, char *buf, int size) {
      * can say which binary is actually running. */
     if (n > 0 && n < size)
         n += snprintf(buf + n, size - n, ",%d,%d", milli(e->voices.rumble_meter), HKH_DSP_BUILD);
+    /* 50: rack pads holding a sample (bitmask), 51: rack mutes, 52-75: rack
+     * patterns, 76-99: rack volumes. */
+    int mute = 0;
+    for (int i = 0; i < HKH_RACK; ++i) if (e->r_mute[i]) mute |= 1 << i;
+    if (n > 0 && n < size)
+        n += snprintf(buf + n, size - n, ",%d,%d", hkh_samples_rack_mask(&inst->bank), mute);
+    for (int i = 0; i < HKH_RACK && n > 0 && n < size; ++i)
+        n += snprintf(buf + n, size - n, ",%d", e->r_pattern[i]);
+    for (int i = 0; i < HKH_RACK && n > 0 && n < size; ++i)
+        n += snprintf(buf + n, size - n, ",%d", milli(e->r_vol[i]));
     if (n < 0 || n >= size) { buf[0] = 0; return -1; }
     return n;
 }
@@ -326,6 +438,12 @@ static int write_state(const hkh_engine *e, char *buf, int size) {
     for (int i = 0; i < HKH_STEPS && n > 0 && n < size; ++i)
         n += snprintf(buf + n, size - n, "%s%.4f", i ? "," : "",
                       e->motion[i] >= 0.0f ? e->motion[i] : -1.0f);
+    if (n > 0 && n < size) n += snprintf(buf + n, size - n, "],\"rp\":[");
+    for (int i = 0; i < HKH_RACK && n > 0 && n < size; ++i)
+        n += snprintf(buf + n, size - n, "%s%d", i ? "," : "", e->r_pattern[i]);
+    if (n > 0 && n < size) n += snprintf(buf + n, size - n, "],\"rv\":[");
+    for (int i = 0; i < HKH_RACK && n > 0 && n < size; ++i)
+        n += snprintf(buf + n, size - n, "%s%.4f", i ? "," : "", e->r_vol[i]);
     if (n > 0 && n < size) n += snprintf(buf + n, size - n, "]}");
     if (n < 0 || n >= size) { buf[0] = 0; return -1; }
     return n;
@@ -341,6 +459,8 @@ static int get_param(void *ptr, const char *key, char *buf, int size) {
     if (idx >= 0) n = snprintf(buf, size, "%.4f", e->param[idx]);
     else if (!strcmp(key, "ui_state")) return write_ui_state(inst, buf, size);
     else if (!strcmp(key, "state")) return write_state(e, buf, size);
+    else if (!strcmp(key, "k_preset")) return write_kick_preset(e, buf, size);
+    else if (!strcmp(key, "h_preset")) return write_hat_preset(e, buf, size);
     else if (!strcmp(key, "chain_params")) return copy_text(buf, size, hkh_chain_params);
     /* Served, and EMPTY on purpose: no hierarchy is what makes the shadow UI
      * open ui_chain.js (the pad performance surface) instead of a knob grid.
