@@ -127,24 +127,27 @@ static int rack_active(const hkh_engine *e) {
     return 0;
 }
 
-/* The rack delay: a dotted eighth (3/4 beat), mono, the repeats darkened a
- * little each pass. FB sets both the feedback and, from the first few
- * percent, the return level -- so FB 0 is no delay, and the one knob is
- * all there is. */
+/* The rack delay: a dotted eighth (3/4 beat), mono. The repeats are copies,
+ * not darkened: there is no filter in the feedback, and once the length has
+ * settled it is read on a whole sample -- a fractional read is a linear
+ * interpolation, which is itself a lowpass applied on every pass (at 120 BPM
+ * the dotted eighth is 16537.5 samples, the worst case). FB sets both the
+ * feedback and, from the first few percent, the return level -- so FB 0 is
+ * no delay, and the one knob is all there is. */
 static float rack_delay_tick(hkh_engine *e, float x) {
     e->dly_fb += (e->r_fb * 0.85f - e->dly_fb) * 0.0005f;
     float wet_t = e->r_fb > 0.0f ? 0.55f * fminf(1.0f, e->r_fb * 5.0f) : 0.0f;
     e->dly_wet += (wet_t - e->dly_wet) * 0.0005f;
     e->dly_len += (e->dly_len_target - e->dly_len) * 0.0002f;   /* tempo glide */
+    if (fabsf(e->dly_len_target - e->dly_len) < 0.01f) e->dly_len = e->dly_len_target;
     if (e->dly_wet < 1e-5f && wet_t == 0.0f && e->dly_quiet > HKH_DELAY_MAX) return x;
     float rp = (float)e->dly_pos - e->dly_len;
     while (rp < 0.0f) rp += (float)HKH_DELAY_MAX;
     int i0 = (int)rp;
     float fr = rp - (float)i0;
     int i1 = i0 + 1 == HKH_DELAY_MAX ? 0 : i0 + 1;
-    float y = e->dly_buf[i0] + (e->dly_buf[i1] - e->dly_buf[i0]) * fr;
-    e->dly_lp += (y - e->dly_lp) * 0.35f;                     /* ~3.5 kHz */
-    float w = x + e->dly_lp * e->dly_fb;
+    float y = fr == 0.0f ? e->dly_buf[i0] : e->dly_buf[i0] + (e->dly_buf[i1] - e->dly_buf[i0]) * fr;
+    float w = x + y * e->dly_fb;
     e->dly_buf[e->dly_pos] = w;
     if (++e->dly_pos == HKH_DELAY_MAX) e->dly_pos = 0;
     e->dly_quiet = (fabsf(w) > 1e-5f) ? 0 : (e->dly_quiet > HKH_DELAY_MAX ? e->dly_quiet : e->dly_quiet + 1);
@@ -496,7 +499,7 @@ void hkh_engine_render(hkh_engine *e, float *out_l, float *out_r, int frames,
                        double beat, float bpm) {
     {   /* the rack delay follows the tempo: a dotted eighth = 3/4 beat */
         float b = (bpm >= 20.0f && bpm <= 999.0f) ? bpm : 120.0f;
-        e->dly_len_target = 0.75f * 60.0f / b * HKH_SR;
+        e->dly_len_target = roundf(0.75f * 60.0f / b * HKH_SR);   /* whole samples */
         if (e->dly_len <= 0.0f) e->dly_len = e->dly_len_target;
     }
     if (!out_l || !out_r || frames <= 0) return;

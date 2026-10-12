@@ -49,7 +49,7 @@ function mockDsp() {
     d.uiState = () => [3, d.running, d.step, d.kp, d.hp, d.kfill ? 0xF1 : d.kp, d.hfill ? 0xFF : d.hp,
         d.kmute, d.hmute, d.kfill, d.hfill, d.kmodel, d.ksample, d.hmodel, d.mode, d.rec, 0, d.len,
         ...PARAM_KEYS.map((k) => Math.round(d.params[k] * 1000)),
-        ...d.motion.map((m) => (m < 0 ? -1 : Math.round(m * 1000))), 250, 601,
+        ...d.motion.map((m) => (m < 0 ? -1 : Math.round(m * 1000))), 250, 602,
         d.rackMask, d.rackMute, ...d.rp, ...d.rv.map((x) => Math.round(x * 1000)), Math.round(d.rfb * 1000)].join(",");
     return d;
 }
@@ -338,7 +338,7 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
     r.page(); r.page();       /* HAT -> RACK -> KICK */
     r.touch(5, true);
     r.tick(4);
-    assert(r.printed.some((t) => t.startsWith("out -12dB") && t.includes("dsp 0.6.1")), r.printed.join("|"));
+    assert(r.printed.some((t) => t.startsWith("out -12dB") && t.includes("dsp 0.6.2")), r.printed.join("|"));
     r.touch(5, false);
 }
 

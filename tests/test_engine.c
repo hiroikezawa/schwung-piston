@@ -833,6 +833,53 @@ static void test_comp_every_hit(void) {
     printf("PASS: COMP restarts on every kick, even inside a loud tail\n");
 }
 
+/* The rack delay repeats keep their tone: no filter in the feedback, and
+ * the dotted eighth is read on whole samples, so a fractional read does not
+ * lowpass every pass either. Echo 1 and echo 4 of a click must have the
+ * same 8 kHz / 1 kHz balance. */
+static int16_t CLICK[64];
+static hkh_sample_ref rack_click(void *ctx, int i) {
+    (void)ctx;
+    hkh_sample_ref r = { i == 0 ? CLICK : NULL, i == 0 ? 64 : 0 };
+    return r;
+}
+static double band(const float *x, int n, double hz) {
+    double w = 2.0 * M_PI * hz / 44100.0, c = 2.0 * cos(w), s1 = 0, s2 = 0;
+    for (int i = 0; i < n; ++i) { double s0 = x[i] + c * s1 - s2; s2 = s1; s1 = s0; }
+    return s1 * s1 + s2 * s2 - c * s1 * s2;
+}
+static void test_rack_delay_tone(void) {
+    memset(CLICK, 0, sizeof(CLICK));
+    CLICK[0] = 20000;                                   /* one sample: flat */
+    static hkh_engine g;
+    static float out[44100 * 3];
+    hkh_engine_init(&g, 12);
+    hkh_engine_set_rack_source(&g, rack_click, NULL);
+    g.k_pattern = 0;
+    g.h_pattern = 0;
+    g.r_pattern[0] = 1;                                 /* pad 1, step 1 */
+    g.r_fb = 0.8f;
+    transport t = {0.0, 120.0f, 1};
+    int n = 0;
+    for (int b = 0; b < 44100 * 2 / BLOCK; ++b) {       /* the 2nd bar starts at 2 s */
+        render(&g, &t);
+        for (int i = 0; i < BLOCK; ++i) out[n++] = L[i];
+    }
+    int first = -1;
+    for (int i = 0; i < n; ++i) if (fabsf(out[i]) > 1e-3f) { first = i; break; }
+    assert(first >= 0);
+    const double gap = 0.75 * 44100.0 * 60.0 / 120.0;   /* 16537.5 */
+    double tilt[5];
+    for (int k = 1; k <= 4; k += 3) {
+        int at = first + (int)(k * gap) - 64;
+        tilt[k] = 10.0 * log10(band(out + at, 256, 8000.0) / band(out + at, 256, 1000.0));
+    }
+    printf("  rack delay echo 1 vs echo 4 (8 kHz re 1 kHz): %.2f / %.2f dB\n", tilt[1], tilt[4]);
+    fflush(stdout);
+    assert(fabs(tilt[4] - tilt[1]) < 1.0);              /* repeats are not darkened */
+    printf("PASS: rack delay repeats keep their tone\n");
+}
+
 /* RUMBLE and REVERB at maximum cannot run away: the tail dies. */
 static void test_fx_tails(void) {
     static hkh_engine g;
@@ -1140,6 +1187,7 @@ int main(void) {
     test_fx_fuzz();
     test_fx_tails();
     test_comp_every_hit();
+    test_rack_delay_tone();
     test_reverb_tone();
     test_zipper();
     test_random();

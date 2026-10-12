@@ -76,7 +76,6 @@ typedef struct {
     float r_fb;                    /* as set, 0..1 */
     float dly_fb, dly_wet;         /* smoothed feedback / return level */
     float dly_len, dly_len_target; /* samples, follows the tempo */
-    float dly_lp;                  /* one-pole state in the feedback path */
     int dly_pos, dly_quiet;
     float dly_buf[HKH_DELAY_MAX];
     hkh_rack_voice rack[HKH_RACK];
