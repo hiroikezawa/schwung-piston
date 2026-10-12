@@ -81,7 +81,7 @@ def block(inst=None):
 
 def ui_state(inst=None):
     f = read("ui_state", inst=inst).split(",")
-    assert f[0] == "3" and len(f) == 18 + 14 + 16 + 2 + 2 + 64 + 1, f
+    assert f[0] == "3" and len(f) == 18 + 14 + 16 + 2 + 2 + 64 + 2, f  # ... rack FB, sidechain
     return [int(x) for x in f]
 
 
@@ -242,6 +242,14 @@ assert ui_state(q2)[51] == 1 << 5, "rack mutes are saved"
 destroy(q2)
 write("r_fb", "nan", inst=pr)
 assert ui_state(pr)[116] == 400
+write("r_sc", "0.6", inst=pr)
+assert ui_state(pr)[117] == 600 and abs(json.loads(read("state", inst=pr))["rsc"] - 0.6) < 1e-4
+q3 = create(b".", None)
+write("state", read("state", inst=pr), inst=q3)
+assert ui_state(q3)[117] == 600, "the rack sidechain is saved"
+destroy(q3)
+write("r_sc", "nan", inst=pr)
+assert ui_state(pr)[117] == 600
 destroy(q)
 destroy(pr)
 

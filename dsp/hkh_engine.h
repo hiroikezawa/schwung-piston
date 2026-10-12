@@ -74,6 +74,11 @@ typedef struct {
     float r_gain[HKH_RACK];        /* smoothed linear gain */
     /* The rack's dotted-eighth delay: one knob, FB. 0 = no delay at all. */
     float r_fb;                    /* as set, 0..1 */
+    /* The rack's sidechain: every fired kick ducks the whole rack bus (dry
+     * and delay) by r_sc, recovering along sc_env. 0 = off. */
+    float r_sc;                    /* depth as set, 0..1 */
+    float sc_env;                  /* 1 at a kick, decays to 0 */
+    float sc_gain;                 /* smoothed gain applied to the rack */
     float dly_fb, dly_wet;         /* smoothed feedback / return level */
     float dly_len, dly_len_target; /* samples, follows the tempo */
     int dly_pos, dly_quiet;
@@ -101,6 +106,7 @@ void hkh_engine_rack_set_mute(hkh_engine *e, int pad, int on);
 void hkh_engine_rack_set_vol(hkh_engine *e, int pad, float vol);
 void hkh_engine_rack_trigger(hkh_engine *e, int pad);
 void hkh_engine_rack_set_fb(hkh_engine *e, float fb);
+void hkh_engine_rack_set_sc(hkh_engine *e, float depth);
 
 /* Continuous parameters. */
 void hkh_engine_set_param(hkh_engine *e, int index, float value);

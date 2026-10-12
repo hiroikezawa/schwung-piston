@@ -19,7 +19,7 @@ _Static_assert(ATOMIC_INT_LOCK_FREE == 2, "instance pool needs lock-free atomics
 
 /* Four chain slots can each hold one; two spare cover a swap in flight. */
 #define HKH_INSTANCES 6
-#define HKH_DSP_BUILD 602          /* major*10000 + minor*100 + patch: 0.6.2; bump with module.json */
+#define HKH_DSP_BUILD 603          /* major*10000 + minor*100 + patch: 0.6.3; bump with module.json */
 
 /* The shim parks a slot whose output stays below 5 LSB for ~1 s and renders
  * it only once every ~0.5 s after that (schwung_shim.c, DSP_IDLE_THRESHOLD).
@@ -259,6 +259,9 @@ static int restore_state(hkh_engine *e, const char *text) {
     float rf = 0.0f;
     if (find_key(p, "rf")) { if (!read_key_number(p, "rf", &rf) || rf < 0.0f || rf > 1.0f) return 0; }
     e->r_fb = rf;
+    float rsc = 0.0f;                       /* the rack sidechain, since 0.6.3 */
+    if (find_key(p, "rsc")) { if (!read_key_number(p, "rsc", &rsc) || rsc < 0.0f || rsc > 1.0f) return 0; }
+    e->r_sc = rsc;
     /* Rack mutes (a bitmask) are part of the saved state since 0.6.1. */
     unsigned long rm = 0;
     const char *rmp = find_key(p, "rm");
@@ -362,6 +365,7 @@ static void set_param(void *ptr, const char *key, const char *val) {
         int pad;
         float f;
         if (!strcmp(key, "r_fb")) { float f2; if (parse_float(val, &f2)) hkh_engine_rack_set_fb(e, f2); return; }
+        if (!strcmp(key, "r_sc")) { float f2; if (parse_float(val, &f2)) hkh_engine_rack_set_sc(e, f2); return; }
         if (!strcmp(key, "r_trig")) { int n; if (parse_int(val, 0, HKH_RACK - 1, &n)) hkh_engine_rack_trigger(e, n); return; }
         if (!parse_pad_value(val, &pad, &f)) return;
         if (!strcmp(key, "r_step")) { if (in_int_range(f, 0, HKH_STEPS - 1)) hkh_engine_rack_toggle_step(e, pad, (int)f); }
@@ -440,8 +444,8 @@ static int write_ui_state(hkh_instance *inst, char *buf, int size) {
         n += snprintf(buf + n, size - n, ",%d", e->r_pattern[i]);
     for (int i = 0; i < HKH_RACK && n > 0 && n < size; ++i)
         n += snprintf(buf + n, size - n, ",%d", milli(e->r_vol[i]));
-    /* 116: the rack delay's FB */
-    if (n > 0 && n < size) n += snprintf(buf + n, size - n, ",%d", milli(e->r_fb));
+    /* 116: the rack delay's FB, 117: the rack sidechain depth */
+    if (n > 0 && n < size) n += snprintf(buf + n, size - n, ",%d,%d", milli(e->r_fb), milli(e->r_sc));
     if (n < 0 || n >= size) { buf[0] = 0; return -1; }
     return n;
 }
@@ -469,7 +473,7 @@ static int write_state(const hkh_engine *e, char *buf, int size) {
     if (n > 0 && n < size) n += snprintf(buf + n, size - n, "],\"rv\":[");
     for (int i = 0; i < HKH_RACK && n > 0 && n < size; ++i)
         n += snprintf(buf + n, size - n, "%s%.4f", i ? "," : "", e->r_vol[i]);
-    if (n > 0 && n < size) n += snprintf(buf + n, size - n, "],\"rf\":%.4f,\"rm\":%u}", e->r_fb, rack_mute_mask(e));
+    if (n > 0 && n < size) n += snprintf(buf + n, size - n, "],\"rf\":%.4f,\"rsc\":%.4f,\"rm\":%u}", e->r_fb, e->r_sc, rack_mute_mask(e));
     if (n < 0 || n >= size) { buf[0] = 0; return -1; }
     return n;
 }

@@ -16,7 +16,7 @@ function mockDsp() {
         params: Object.fromEntries(PARAM_KEYS.map((k, i) =>
             [k, [0.8, 0.25, 0.5, 0.15, 0.25, 0, 0, 0.7, 0.5, 0, 0.1, 0.2, 0.5, 0][i]])),
         motion: new Array(16).fill(-1),
-        rackMask: 0xFFFFFFFF & ~(1 << 4), rackMute: 0, rp: new Array(32).fill(0), rv: new Array(32).fill(0.8), rfb: 0,
+        rackMask: 0xFFFFFFFF & ~(1 << 4), rackMute: 0, rp: new Array(32).fill(0), rv: new Array(32).fill(0.8), rfb: 0, rsc: 0,
     };
     d.set = (key, value) => {
         const v = Number(value);
@@ -42,6 +42,7 @@ function mockDsp() {
         case "r_step": { const [a, b] = String(value).split(":").map(Number); d.rp[a] ^= 1 << b; break; }
         case "r_mute": { const [a, b] = String(value).split(":").map(Number); d.rackMute = b ? d.rackMute | (1 << a) : d.rackMute & ~(1 << a); break; }
         case "r_fb": d.rfb = v; break;
+        case "r_sc": d.rsc = v; break;
         case "r_vol": { const [a, b] = String(value).split(":").map(Number); d.rv[a] = b; break; }
         default: break;
         }
@@ -49,8 +50,8 @@ function mockDsp() {
     d.uiState = () => [3, d.running, d.step, d.kp, d.hp, d.kfill ? 0xF1 : d.kp, d.hfill ? 0xFF : d.hp,
         d.kmute, d.hmute, d.kfill, d.hfill, d.kmodel, d.ksample, d.hmodel, d.mode, d.rec, 0, d.len,
         ...PARAM_KEYS.map((k) => Math.round(d.params[k] * 1000)),
-        ...d.motion.map((m) => (m < 0 ? -1 : Math.round(m * 1000))), 250, 602,
-        d.rackMask, d.rackMute, ...d.rp, ...d.rv.map((x) => Math.round(x * 1000)), Math.round(d.rfb * 1000)].join(",");
+        ...d.motion.map((m) => (m < 0 ? -1 : Math.round(m * 1000))), 250, 603,
+        d.rackMask, d.rackMute, ...d.rp, ...d.rv.map((x) => Math.round(x * 1000)), Math.round(d.rfb * 1000), Math.round(d.rsc * 1000)].join(",");
     return d;
 }
 
@@ -338,7 +339,7 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
     r.page(); r.page();       /* HAT -> RACK -> KICK */
     r.touch(5, true);
     r.tick(4);
-    assert(r.printed.some((t) => t.startsWith("out -12dB") && t.includes("dsp 0.6.2")), r.printed.join("|"));
+    assert(r.printed.some((t) => t.startsWith("out -12dB") && t.includes("dsp 0.6.3")), r.printed.join("|"));
     r.touch(5, false);
 }
 
@@ -444,6 +445,13 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
     assert(Number(r.last()[1]) > 0.1);
     r.tick(2);
     assert(r.printed.some((t) => t.startsWith("DLY ") || t.startsWith("DELAY FB")), r.printed.join("|"));
+    /* Knob 6: the rack sidechain depth. */
+    r.turn(5, 40); r.tick();
+    assert.equal(r.last()[0], "r_sc");
+    assert(Number(r.last()[1]) > 0.1);
+    assert(r.dsp.rsc > 0.1);
+    r.tick(2);
+    assert(r.printed.some((t) => t.startsWith("SIDECHAIN")), r.printed.join("|"));
 }
 
 /* ---- knob 8: one page per turn gesture, both directions ------------------ */

@@ -61,6 +61,17 @@
       ]
     },
     {
+      "title": "Rack sidechain",
+      "lines": [
+        "Knob 6: SIDECHAIN",
+        "  each kick ducks",
+        "  the rack (and its",
+        "  delay), then it",
+        "  comes back.",
+        "0 = off."
+      ]
+    },
+    {
       "title": "Knobs",
       "lines": [
         "1 VOL 2 MIX/METAL",

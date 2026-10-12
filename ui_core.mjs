@@ -146,7 +146,7 @@ export const C = {
 /* ---- ui_state ------------------------------------------------------------ */
 
 /* The DSP's one-line state; see write_ui_state in dsp/hkh_plugin.c. */
-export const UI_STATE_FIELDS = 18 + 14 + 16 + 2 + 2 + 32 + 32 + 1;
+export const UI_STATE_FIELDS = 18 + 14 + 16 + 2 + 2 + 32 + 32 + 1 + 1;   // + the rack sidechain (0.6.3)
 
 export function parseUiState(text) {
     if (typeof text !== "string" || text.length === 0) return null;
@@ -170,6 +170,7 @@ export function parseUiState(text) {
         rumbleOut: n[48] / 1000, build: n[49],
         rackMask: n[50], rackMute: n[51],
         rp: n.slice(52, 84), rv: n.slice(84, 116).map((x) => x / 1000), rfb: n[116] / 1000,
+        rsc: n[117] / 1000,
     };
 }
 
@@ -177,7 +178,7 @@ export function defaultState() {
     return parseUiState("3,0,-1,4369,17476,4369,17476,0,0,0,0,1,0,1,0,0,0,8," +
         "800,250,500,150,250,0,0,700,500,0,100,200,500,0," +
         Array(16).fill(-1).join(",") + ",0,0,0,0," +
-        Array(32).fill(0).join(",") + "," + Array(32).fill(800).join(",") + ",0");
+        Array(32).fill(0).join(",") + "," + Array(32).fill(800).join(",") + ",0,0");
 }
 
 /* ---- LEDs (pure) --------------------------------------------------------- */
@@ -658,6 +659,16 @@ export function createUi(host) {
                 s.rfb = Math.min(1, Math.max(0, s.rfb + d * step));
                 pending.set("r_fb", s.rfb);
                 say(s.rfb > 0 ? `DELAY FB ${Math.round(s.rfb * 100)}%` : "DELAY OFF");
+                return;
+            }
+            if (knob === 5 && d !== 0) {
+                /* Knob 6: the rack sidechain -- how far each kick ducks it. */
+                const now = host.now();
+                const step = knobStep(now - lastTurn[knob]);
+                lastTurn[knob] = now;
+                s.rsc = Math.min(1, Math.max(0, (s.rsc || 0) + d * step));
+                pending.set("r_sc", s.rsc);
+                say(s.rsc > 0 ? `SIDECHAIN ${Math.round(s.rsc * 100)}%` : "SIDECHAIN OFF");
                 return;
             }
             /* Hold a rack pad: knob 1 = its volume. */

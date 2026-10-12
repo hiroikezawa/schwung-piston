@@ -880,6 +880,83 @@ static void test_rack_delay_tone(void) {
     printf("PASS: rack delay repeats keep their tone\n");
 }
 
+/* The rack sidechain: a fired kick ducks the rack by r_sc and it comes back;
+ * a muted kick ducks nothing; and the delay at FB 100% decays, never grows. */
+#define TONE_LEN (44100 * 3 / 2)
+static int16_t TONE[TONE_LEN];
+static hkh_sample_ref rack_tone(void *ctx, int i) {
+    (void)ctx;
+    hkh_sample_ref r = { i == 0 ? TONE : NULL, i == 0 ? TONE_LEN : 0 };
+    return r;
+}
+static float sc_level(float depth, int kick_muted, double from_ms, double to_ms) {
+    static hkh_engine g;
+    hkh_engine_init(&g, 13);
+    hkh_engine_set_rack_source(&g, rack_tone, NULL);
+    hkh_engine_set_param(&g, P_K_VOL, 0.0f);            /* the key, not heard */
+    hkh_engine_set_param(&g, P_K_RUMBLE, 0.0f);
+    hkh_engine_set_param(&g, P_K_VERB, 0.0f);
+    g.h_pattern = 0;
+    g.k_pattern = 1u << 4;                              /* kick on step 5 */
+    g.r_pattern[0] = 1;                                 /* tone from step 1 */
+    hkh_engine_rack_set_sc(&g, depth);
+    if (kick_muted) hkh_engine_set_mute(&g, 0, 1);
+    transport t = {0.0, 120.0f, 1};
+    const double kick_at = 4 * 44100.0 * 60.0 / 120.0 / 4.0;   /* step 5 */
+    double peak = 0.0;
+    for (int b = 0, n = 0; b < 44100 / BLOCK; ++b) {
+        render(&g, &t);
+        for (int i = 0; i < BLOCK; ++i, ++n) {
+            double ms = (n - kick_at) * 1000.0 / 44100.0;
+            if (ms >= from_ms && ms < to_ms) peak = fmax(peak, fabsf(L[i]));
+        }
+    }
+    return (float)peak;
+}
+static void test_rack_sidechain(void) {
+    for (int i = 0; i < TONE_LEN; ++i) TONE[i] = (int16_t)(12000.0 * sin(2 * M_PI * 220.0 * i / 44100.0));
+    float before = sc_level(1.0f, 0, -60, -10);
+    float off = sc_level(0.0f, 0, 3, 12);
+    float duck = sc_level(1.0f, 0, 3, 12);
+    float half = sc_level(0.5f, 0, 3, 12);
+    float back = sc_level(1.0f, 0, 400, 480);
+    float muted = sc_level(1.0f, 1, 3, 12);
+    printf("  sidechain: before %.3f | 3-12 ms after a kick: off %.3f, 50%% %.3f, 100%% %.3f | 400 ms %.3f | kick muted %.3f\n",
+           before, off, half, duck, back, muted);
+    fflush(stdout);
+    assert(fabsf(off - before) < 0.02f * before);       /* 0 = untouched */
+    assert(duck < 0.25f * before);                      /* 100% = deep */
+    assert(half > duck && half < 0.8f * before);        /* depth scales */
+    assert(back > 0.9f * before);                       /* it comes back */
+    assert(fabsf(muted - before) < 0.02f * before);     /* no kick, no duck */
+
+    /* FB 100%: every repeat a little quieter than the one before. */
+    static hkh_engine g;
+    memset(CLICK, 0, sizeof(CLICK));
+    CLICK[0] = 20000;
+    hkh_engine_init(&g, 14);
+    hkh_engine_set_rack_source(&g, rack_click, NULL);
+    g.k_pattern = 0;
+    g.h_pattern = 0;
+    g.r_pattern[0] = 1;
+    hkh_engine_rack_set_fb(&g, 1.0f);
+    transport t = {0.0, 120.0f, 1};
+    const int gap = 16538, blocks = 44100 * 4 / BLOCK;
+    static float echo[16];
+    memset(echo, 0, sizeof(echo));
+    for (int b = 0, n = 0; b < blocks; ++b) {
+        render(&g, &t);
+        if (b == 4) g.r_pattern[0] = 0;                 /* one click only */
+        for (int i = 0; i < BLOCK; ++i, ++n) {
+            int k = (n + gap / 2) / gap;
+            if (k > 0 && k < 9) echo[k] = fmaxf(echo[k], fabsf(L[i]));
+        }
+    }
+    for (int k = 2; k < 9; ++k) assert(echo[k] <= echo[k - 1] * 1.001f && echo[k] > 0.85f * echo[k - 1]);
+    printf("  delay FB 100%%: echo 1..8 = %.3f .. %.3f (long, decaying)\n", echo[1], echo[8]);
+    printf("PASS: rack sidechain ducks on every kick and recovers; FB 100%% is long and stable\n");
+}
+
 /* RUMBLE and REVERB at maximum cannot run away: the tail dies. */
 static void test_fx_tails(void) {
     static hkh_engine g;
@@ -1188,6 +1265,7 @@ int main(void) {
     test_fx_tails();
     test_comp_every_hit();
     test_rack_delay_tone();
+    test_rack_sidechain();
     test_reverb_tone();
     test_zipper();
     test_random();

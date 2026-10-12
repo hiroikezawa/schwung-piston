@@ -82,6 +82,7 @@ static void voices_kick(hkh_engine *e, float vel) {
     hkh_akick_trigger(&e->voices.akick, e->k_model, vel, e->param[P_K_DECAY]);
     hkh_digital_trigger(&e->voices.dkick, kick_sample(e), vel);
     hkh_comp_trigger(&e->voices.kcomp);
+    e->sc_env = 1.0f;                       /* the rack's sidechain key */
 }
 static void voices_hat(hkh_engine *e, float vel, float decay, int follows_base) {
     hkh_hat_trigger(&e->voices.hat, e->h_model, vel, decay, follows_base);
@@ -127,6 +128,14 @@ static int rack_active(const hkh_engine *e) {
     return 0;
 }
 
+/* FB 100% keeps 0.95 of each repeat (-0.45 dB a pass): long, never runaway. */
+#define RACK_FB_MAX 0.95f
+/* Sidechain: the duck comes in over ~2 ms (no click) and the release is an
+ * exponential with an 80 ms time constant -- back by about an eighth note
+ * at 120 BPM. */
+#define SC_DECAY 0.99971660f          /* exp(-1 / (0.080 * 44100)) */
+#define SC_SMOOTH 0.0113f             /* ~2 ms one-pole on the gain */
+
 /* The rack delay: a dotted eighth (3/4 beat), mono. The repeats are copies,
  * not darkened: there is no filter in the feedback, and once the length has
  * settled it is read on a whole sample -- a fractional read is a linear
@@ -135,7 +144,7 @@ static int rack_active(const hkh_engine *e) {
  * feedback and, from the first few percent, the return level -- so FB 0 is
  * no delay, and the one knob is all there is. */
 static float rack_delay_tick(hkh_engine *e, float x) {
-    e->dly_fb += (e->r_fb * 0.85f - e->dly_fb) * 0.0005f;
+    e->dly_fb += (e->r_fb * RACK_FB_MAX - e->dly_fb) * 0.0005f;
     float wet_t = e->r_fb > 0.0f ? 0.55f * fminf(1.0f, e->r_fb * 5.0f) : 0.0f;
     e->dly_wet += (wet_t - e->dly_wet) * 0.0005f;
     e->dly_len += (e->dly_len_target - e->dly_len) * 0.0002f;   /* tempo glide */
@@ -199,6 +208,9 @@ static void voices_tick(hkh_engine *e, float *l, float *r) {
         rs += x * rv->vel * e->r_gain[i];
     }
     rs = rack_delay_tick(e, rs);
+    e->sc_env *= SC_DECAY;
+    e->sc_gain += (1.0f - e->r_sc * e->sc_env - e->sc_gain) * SC_SMOOTH;
+    rs *= e->sc_gain;
     if (rs != 0.0f) rs = hkh_tanh(rs * (1.0f / RACK_CEILING)) * RACK_CEILING;
     float outl = kb + h + rl + rs, outr = kb + h + rr + rs;
     hkh_limiter_tick(&v->limiter, &outl, &outr);
@@ -210,6 +222,7 @@ static void voices_tick(hkh_engine *e, float *l, float *r) {
 void hkh_engine_init(hkh_engine *e, uint32_t seed) {
     memset(e, 0, sizeof(*e));
     e->dly_quiet = HKH_DELAY_MAX + 1;
+    e->sc_gain = 1.0f;
     for (int i = 0; i < P_COUNT; ++i) e->param[i] = hkh_param_defaults[i];
     e->k_model = KICK_909;
     e->k_sample = 0;
@@ -253,6 +266,10 @@ static void fire_rack(hkh_engine *e, int pad) {
 
 void hkh_engine_rack_set_fb(hkh_engine *e, float fb) {
     if (isfinite(fb)) e->r_fb = hkh_clamp(fb, 0.0f, 1.0f);
+}
+
+void hkh_engine_rack_set_sc(hkh_engine *e, float depth) {
+    if (isfinite(depth)) e->r_sc = hkh_clamp(depth, 0.0f, 1.0f);
 }
 
 void hkh_engine_rack_trigger(hkh_engine *e, int pad) {
@@ -540,6 +557,8 @@ void hkh_engine_render(hkh_engine *e, float *out_l, float *out_r, int frames,
         v->ksend += v->ksend_step * (float)frames;
         v->hsend += v->hsend_step * (float)frames;
         v->rumble_meter *= 0.994f;
+        e->sc_env *= powf(SC_DECAY, (float)frames);
+        e->sc_gain = 1.0f - e->r_sc * e->sc_env;
         memset(out_l, 0, (size_t)frames * sizeof(float));
         memset(out_r, 0, (size_t)frames * sizeof(float));
         return;
