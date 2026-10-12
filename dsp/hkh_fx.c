@@ -55,9 +55,6 @@ float hkh_drive_tick(hkh_drive *d, float x) {
 void hkh_comp_init(hkh_comp *c, int hat) {
     memset(c, 0, sizeof(*c));
     c->hat = hat;
-    c->rel_fast = expf(-1.0f / (0.005f * HKH_SR));
-    c->att_slow = expf(-1.0f / (0.004f * HKH_SR));
-    c->rel_slow = expf(-1.0f / (0.080f * HKH_SR));
     c->since = 1 << 30;
     c->shape = 1.0f;
     hkh_comp_block(c, 0.0f, 1);
@@ -78,16 +75,10 @@ void hkh_comp_block(hkh_comp *c, float amount, int frames) {
     c->wet_step = ramp(c->wet, hkh_clamp(a * 4.0f, 0.0f, 1.0f), frames);
 }
 
+void hkh_comp_trigger(hkh_comp *c) { c->since = 0; }
+
 float hkh_comp_tick(hkh_comp *c, float x) {
     c->wet += c->wet_step;
-    float ax = fabsf(x);
-    c->env_fast = ax > c->env_fast ? ax : c->env_fast * c->rel_fast;
-    float ks = ax > c->env_slow ? c->att_slow : c->rel_slow;
-    c->env_slow = ax + (c->env_slow - ax) * ks;
-    /* An onset: the fast envelope jumps well above the slow one. */
-    if (c->env_fast > 0.02f && c->env_fast > 2.0f * c->env_slow + 1e-4f && c->since > c->hold) {
-        c->since = 0;
-    }
     if (c->since < (1 << 30)) ++c->since;
     if (c->since <= c->hold) {
         /* back to unity within the hold (it was mid-tail on a retrigger) */

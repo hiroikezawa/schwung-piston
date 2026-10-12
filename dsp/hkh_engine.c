@@ -81,9 +81,11 @@ static void voices_kick(hkh_engine *e, float vel) {
      * turning MIX during a tail crossfades the tail too. */
     hkh_akick_trigger(&e->voices.akick, e->k_model, vel, e->param[P_K_DECAY]);
     hkh_digital_trigger(&e->voices.dkick, kick_sample(e), vel);
+    hkh_comp_trigger(&e->voices.kcomp);
 }
 static void voices_hat(hkh_engine *e, float vel, float decay, int follows_base) {
     hkh_hat_trigger(&e->voices.hat, e->h_model, vel, decay, follows_base);
+    hkh_comp_trigger(&e->voices.hcomp);
 }
 static void voices_choke(hkh_engine *e, int hat) {
     if (hat) {

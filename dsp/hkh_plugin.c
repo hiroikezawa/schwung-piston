@@ -19,7 +19,7 @@ _Static_assert(ATOMIC_INT_LOCK_FREE == 2, "instance pool needs lock-free atomics
 
 /* Four chain slots can each hold one; two spare cover a swap in flight. */
 #define HKH_INSTANCES 6
-#define HKH_DSP_BUILD 600          /* major*10000 + minor*100 + patch: 0.6.0; bump with module.json */
+#define HKH_DSP_BUILD 601          /* major*10000 + minor*100 + patch: 0.6.1; bump with module.json */
 
 /* The shim parks a slot whose output stays below 5 LSB for ~1 s and renders
  * it only once every ~0.5 s after that (schwung_shim.c, DSP_IDLE_THRESHOLD).
@@ -259,6 +259,16 @@ static int restore_state(hkh_engine *e, const char *text) {
     float rf = 0.0f;
     if (find_key(p, "rf")) { if (!read_key_number(p, "rf", &rf) || rf < 0.0f || rf > 1.0f) return 0; }
     e->r_fb = rf;
+    /* Rack mutes (a bitmask) are part of the saved state since 0.6.1. */
+    unsigned long rm = 0;
+    const char *rmp = find_key(p, "rm");
+    if (rmp) {
+        char *end;
+        if (!isdigit((unsigned char)*rmp)) return 0;
+        rm = strtoul(rmp, &end, 10);
+        if (rm > 0xFFFFFFFFul || (*end != ',' && *end != '}' && !isspace((unsigned char)*end))) return 0;
+    }
+    for (int i = 0; i < HKH_RACK; ++i) hkh_engine_rack_set_mute(e, i, (int)((rm >> i) & 1u));
     for (int i = 0; has_rack && i < HKH_RACK; ++i) {
         e->r_pattern[i] = (uint16_t)rp[i];
         e->r_vol[i] = rv[i];
@@ -436,6 +446,12 @@ static int write_ui_state(hkh_instance *inst, char *buf, int size) {
     return n;
 }
 
+static unsigned rack_mute_mask(const hkh_engine *e) {
+    unsigned m = 0;
+    for (int i = 0; i < HKH_RACK; ++i) if (e->r_mute[i]) m |= 1u << i;
+    return m;
+}
+
 static int write_state(const hkh_engine *e, char *buf, int size) {
     int n = snprintf(buf, size, "{\"v\":1,\"mode\":%d,\"km\":%d,\"ks\":%d,\"hm\":%d,"
                      "\"kp\":%d,\"hp\":%d,\"len\":%d,\"p\":[",
@@ -453,7 +469,7 @@ static int write_state(const hkh_engine *e, char *buf, int size) {
     if (n > 0 && n < size) n += snprintf(buf + n, size - n, "],\"rv\":[");
     for (int i = 0; i < HKH_RACK && n > 0 && n < size; ++i)
         n += snprintf(buf + n, size - n, "%s%.4f", i ? "," : "", e->r_vol[i]);
-    if (n > 0 && n < size) n += snprintf(buf + n, size - n, "],\"rf\":%.4f}", e->r_fb);
+    if (n > 0 && n < size) n += snprintf(buf + n, size - n, "],\"rf\":%.4f,\"rm\":%u}", e->r_fb, rack_mute_mask(e));
     if (n < 0 || n >= size) { buf[0] = 0; return -1; }
     return n;
 }

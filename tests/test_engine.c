@@ -788,6 +788,51 @@ static void test_fx_fuzz(void) {
     printf("PASS: 120 random settings with moving knobs: bounded at -0.5 dBFS, finite\n");
 }
 
+/* COMP restarts on every hit it is given, not on what it can detect: a kick
+ * that lands while the last one's long digital tail is still loud must not
+ * be squashed by that tail's envelope. (It was: with a 0.5 s sample at MIX
+ * 0.8, some hits came out at 0.005 of their level -- the kick "vanished".) */
+#define LONG_KICK (44100 * 3 / 2)
+static int16_t LONGK[LONG_KICK];
+static hkh_sample_ref long_kick(void *ctx, int i) {
+    (void)ctx; (void)i;
+    hkh_sample_ref r = { LONGK, LONG_KICK };
+    return r;
+}
+static void test_comp_every_hit(void) {
+    for (int i = 0; i < LONG_KICK; ++i) {
+        double t = i / 44100.0;
+        LONGK[i] = (int16_t)(30000.0 * sin(2 * M_PI * 55.0 * t) * exp(-t / 0.6));
+    }
+    const float comps[] = {0.2f, 0.35f, 0.6f, 1.0f};
+    for (int c = 0; c < 4; ++c) {
+        static hkh_engine g;
+        hkh_engine_init(&g, 11);
+        hkh_engine_set_sample_source(&g, long_kick, NULL);
+        hkh_engine_set_param(&g, P_K_MIX, 0.8f);
+        hkh_engine_set_param(&g, P_K_COMP, comps[c]);
+        hkh_engine_set_param(&g, P_K_RUMBLE, 0.0f);
+        hkh_engine_set_param(&g, P_K_VERB, 0.0f);
+        g.h_pattern = 0;
+        g.k_pattern = 0x5555;                           /* every 8th */
+        transport t = {0.0, 120.0f, 1};
+        float hit[32] = {0};
+        for (int b = 0; b < 44100 * 4 / BLOCK; ++b) {
+            int step = (int)(t.beat * 4.0 + 1e-9);
+            double into = t.beat * 4.0 - step;          /* fraction of the 16th */
+            render(&g, &t);
+            if (step < 32 && into < 0.25)               /* the first ~30 ms */
+                for (int i = 0; i < BLOCK; ++i) hit[step] = fmaxf(hit[step], fabsf(L[i]));
+        }
+        float lo = 1.0f, hi = 0.0f;
+        for (int s = 2; s < 32; s += 2) { lo = fminf(lo, hit[s]); hi = fmaxf(hi, hit[s]); }
+        printf("  COMP %.2f: every kick peak %.3f..%.3f\n", comps[c], lo, hi);
+        fflush(stdout);
+        assert(lo > 0.5f * hi);                         /* no hit is squashed */
+    }
+    printf("PASS: COMP restarts on every kick, even inside a loud tail\n");
+}
+
 /* RUMBLE and REVERB at maximum cannot run away: the tail dies. */
 static void test_fx_tails(void) {
     static hkh_engine g;
@@ -1094,6 +1139,7 @@ int main(void) {
     test_fx_levels();
     test_fx_fuzz();
     test_fx_tails();
+    test_comp_every_hit();
     test_reverb_tone();
     test_zipper();
     test_random();

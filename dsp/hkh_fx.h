@@ -35,13 +35,16 @@ float hkh_drive_tick(hkh_drive *d, float x);
  * shrinks as the knob goes up. It works per HIT (an onset detector restarts
  * it), not per level, so a long 808 tail can never keep it clamped into the
  * next kick -- and nothing is ever lifted: more COMP = the same crack, a
- * tighter, shorter sound. Kick and hat get different times. */
+ * tighter, shorter sound. Kick and hat get different times.
+ *
+ * The engine says when a hit starts (hkh_comp_trigger, on every fired kick
+ * or hat). It used to infer that from the level -- an onset detector -- and
+ * a hit landing inside a long, still-loud tail was not "an onset", so it was
+ * pressed down by the previous hit's envelope and all but vanished. */
 typedef struct {
     float amount;
     int hat;
-    float env_fast, env_slow;  /* onset detector */
-    float rel_fast, att_slow, rel_slow;
-    int since;                 /* samples since the last onset */
+    int since;                 /* samples since the last hit */
     int hold;                  /* samples the transient passes untouched */
     float decay;               /* per-sample factor of the tail envelope */
     float shape;               /* the tail envelope, 1 -> 0 */
@@ -50,6 +53,7 @@ typedef struct {
 
 void hkh_comp_init(hkh_comp *c, int hat);
 void hkh_comp_block(hkh_comp *c, float amount, int frames);
+void hkh_comp_trigger(hkh_comp *c);   /* a hit starts now */
 float hkh_comp_tick(hkh_comp *c, float x);
 
 /* RUMBLE: the techno rumble as one knob. The kick is sent into a small,

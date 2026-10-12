@@ -236,6 +236,10 @@ write("state", read("state", inst=pr), inst=q)
 assert ui_state(q)[52 + 3] == 4 and ui_state(q)[84 + 7] == 250 and ui_state(q)[14] == 2
 write("r_fb", "0.4", inst=pr)
 assert ui_state(pr)[116] == 400 and abs(json.loads(read("state", inst=pr))["rf"] - 0.4) < 1e-4
+q2 = create(b".", None)
+write("state", read("state", inst=pr), inst=q2)
+assert ui_state(q2)[51] == 1 << 5, "rack mutes are saved"
+destroy(q2)
 write("r_fb", "nan", inst=pr)
 assert ui_state(pr)[116] == 400
 destroy(q)
