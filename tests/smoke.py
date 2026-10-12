@@ -81,7 +81,7 @@ def block(inst=None):
 
 def ui_state(inst=None):
     f = read("ui_state", inst=inst).split(",")
-    assert f[0] == "3" and len(f) == 18 + 14 + 16 + 2 + 2 + 64, f
+    assert f[0] == "3" and len(f) == 18 + 14 + 16 + 2 + 2 + 64 + 1, f
     return [int(x) for x in f]
 
 
@@ -234,6 +234,10 @@ assert ui_state(pr)[14] == 2
 q = create(b".", None)
 write("state", read("state", inst=pr), inst=q)
 assert ui_state(q)[52 + 3] == 4 and ui_state(q)[84 + 7] == 250 and ui_state(q)[14] == 2
+write("r_fb", "0.4", inst=pr)
+assert ui_state(pr)[116] == 400 and abs(json.loads(read("state", inst=pr))["rf"] - 0.4) < 1e-4
+write("r_fb", "nan", inst=pr)
+assert ui_state(pr)[116] == 400
 destroy(q)
 destroy(pr)
 

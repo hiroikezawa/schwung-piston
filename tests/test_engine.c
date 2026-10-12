@@ -1059,7 +1059,22 @@ static void test_rack(void) {
     float e3 = 0; for (int i = 0; i < 4; ++i) e3 += energy(&E, &t);
     if (!(e0 < 1e-3f && e3 > 1.0f)) fprintf(stderr, "e0 %g e3 %g\n", e0, e3);
     assert(e0 < 1e-3f && e3 > 1.0f);
-    printf("PASS: rack: per-pad steps, mute, empty pads, volume, 16-step carry\n");
+    /* The delay: FB 0 = dry only; FB up = an echo a dotted eighth later. */
+    hkh_engine_init(&E, 43);
+    hkh_engine_set_rack_source(&E, rack_src, NULL);
+    transport s2 = {0.0, 120.0f, 0};
+    int lag = (int)(0.75 * 60.0 / 120.0 * 44100.0 / BLOCK);      /* 0.375 s */
+    for (int pass = 0; pass < 2; ++pass) {
+        hkh_engine_rack_set_fb(&E, pass ? 0.5f : 0.0f);
+        for (int i = 0; i < 200; ++i) render(&E, &s2);           /* settle */
+        hkh_engine_rack_trigger(&E, 0);
+        render(&E, &s2);
+        for (int i = 1; i < lag - 1; ++i) render(&E, &s2);
+        float echo = 0; for (int i = 0; i < 4; ++i) echo += energy(&E, &s2);
+        if (pass == 0) assert(echo < 1e-6f);
+        else { if (!(echo > 0.5f)) fprintf(stderr, "echo %g\n", echo); assert(echo > 0.5f); }
+    }
+    printf("PASS: rack: per-pad steps, mute, empty pads, volume, 16-step carry, dotted-1/8 delay\n");
 }
 
 int main(void) {

@@ -52,6 +52,15 @@
       ]
     },
     {
+      "title": "Rack delay",
+      "lines": [
+        "Knob 7: DELAY FB",
+        "Dotted 1/8, tempo",
+        "  synced, rack only.",
+        "0 = no delay."
+      ]
+    },
+    {
       "title": "Knobs",
       "lines": [
         "1 VOL 2 MIX/METAL",

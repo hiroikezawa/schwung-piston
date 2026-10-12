@@ -125,9 +125,33 @@ static int rack_active(const hkh_engine *e) {
     return 0;
 }
 
+/* The rack delay: a dotted eighth (3/4 beat), mono, the repeats darkened a
+ * little each pass. FB sets both the feedback and, from the first few
+ * percent, the return level -- so FB 0 is no delay, and the one knob is
+ * all there is. */
+static float rack_delay_tick(hkh_engine *e, float x) {
+    e->dly_fb += (e->r_fb * 0.85f - e->dly_fb) * 0.0005f;
+    float wet_t = e->r_fb > 0.0f ? 0.55f * fminf(1.0f, e->r_fb * 5.0f) : 0.0f;
+    e->dly_wet += (wet_t - e->dly_wet) * 0.0005f;
+    e->dly_len += (e->dly_len_target - e->dly_len) * 0.0002f;   /* tempo glide */
+    if (e->dly_wet < 1e-5f && wet_t == 0.0f && e->dly_quiet > HKH_DELAY_MAX) return x;
+    float rp = (float)e->dly_pos - e->dly_len;
+    while (rp < 0.0f) rp += (float)HKH_DELAY_MAX;
+    int i0 = (int)rp;
+    float fr = rp - (float)i0;
+    int i1 = i0 + 1 == HKH_DELAY_MAX ? 0 : i0 + 1;
+    float y = e->dly_buf[i0] + (e->dly_buf[i1] - e->dly_buf[i0]) * fr;
+    e->dly_lp += (y - e->dly_lp) * 0.35f;                     /* ~3.5 kHz */
+    float w = x + e->dly_lp * e->dly_fb;
+    e->dly_buf[e->dly_pos] = w;
+    if (++e->dly_pos == HKH_DELAY_MAX) e->dly_pos = 0;
+    e->dly_quiet = (fabsf(w) > 1e-5f) ? 0 : (e->dly_quiet > HKH_DELAY_MAX ? e->dly_quiet : e->dly_quiet + 1);
+    return x + y * e->dly_wet;
+}
+
 static int voices_silent(const hkh_engine *e) {
     const hkh_voices *v = &e->voices;
-    return !rack_active(e) && !hkh_akick_active(&v->akick) && !hkh_digital_active(&v->dkick) &&
+    return !rack_active(e) && e->dly_quiet > HKH_DELAY_MAX && !hkh_akick_active(&v->akick) && !hkh_digital_active(&v->dkick) &&
            !hkh_hat_active(&v->hat) &&
            v->rumble.quiet >= (1 << 20) && v->rumble.amount < 0.001f &&
            v->reverb.quiet >= 44100 * 3 &&
@@ -169,6 +193,7 @@ static void voices_tick(hkh_engine *e, float *l, float *r) {
         if (left < 88) x *= (float)left * (1.0f / 88.0f);
         rs += x * rv->vel * e->r_gain[i];
     }
+    rs = rack_delay_tick(e, rs);
     if (rs != 0.0f) rs = hkh_tanh(rs * (1.0f / RACK_CEILING)) * RACK_CEILING;
     float outl = kb + h + rl + rs, outr = kb + h + rr + rs;
     hkh_limiter_tick(&v->limiter, &outl, &outr);
@@ -179,6 +204,7 @@ static void voices_tick(hkh_engine *e, float *l, float *r) {
 
 void hkh_engine_init(hkh_engine *e, uint32_t seed) {
     memset(e, 0, sizeof(*e));
+    e->dly_quiet = HKH_DELAY_MAX + 1;
     for (int i = 0; i < P_COUNT; ++i) e->param[i] = hkh_param_defaults[i];
     e->k_model = KICK_909;
     e->k_sample = 0;
@@ -218,6 +244,10 @@ static void fire_rack(hkh_engine *e, int pad) {
     v->len = r.len;
     v->pos = 0;
     v->vel = 1.0f;
+}
+
+void hkh_engine_rack_set_fb(hkh_engine *e, float fb) {
+    if (isfinite(fb)) e->r_fb = hkh_clamp(fb, 0.0f, 1.0f);
 }
 
 void hkh_engine_rack_trigger(hkh_engine *e, int pad) {
@@ -462,6 +492,11 @@ static void age_heartbeats(hkh_engine *e, int frames) {
 
 void hkh_engine_render(hkh_engine *e, float *out_l, float *out_r, int frames,
                        double beat, float bpm) {
+    {   /* the rack delay follows the tempo: a dotted eighth = 3/4 beat */
+        float b = (bpm >= 20.0f && bpm <= 999.0f) ? bpm : 120.0f;
+        e->dly_len_target = 0.75f * 60.0f / b * HKH_SR;
+        if (e->dly_len <= 0.0f) e->dly_len = e->dly_len_target;
+    }
     if (!out_l || !out_r || frames <= 0) return;
     age_heartbeats(e, frames);
     hkh_step_event ev[HKH_SEQ_MAX_EVENTS];

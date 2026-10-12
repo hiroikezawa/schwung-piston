@@ -27,6 +27,7 @@ enum { MODE_KICK = 0, MODE_HAT = 1, MODE_RACK = 2, MODE_COUNT = 3 };
  * volume, sharing the kick/hat sequencer's clock and length. */
 #define HKH_RACK 32
 #define HKH_RACK_DEFAULT_VOL 0.8f
+#define HKH_DELAY_MAX 131072       /* > a dotted eighth at 20 BPM (99225) */
 typedef struct { const int16_t *data; int len, pos; float vel; } hkh_rack_voice;
 
 #define HKH_KICK_DEFAULT_PATTERN 0x1111u /* steps 1, 5 (9, 13) */
@@ -71,6 +72,13 @@ typedef struct {
     uint8_t r_mute[HKH_RACK];
     float r_vol[HKH_RACK];         /* 0..1, as set */
     float r_gain[HKH_RACK];        /* smoothed linear gain */
+    /* The rack's dotted-eighth delay: one knob, FB. 0 = no delay at all. */
+    float r_fb;                    /* as set, 0..1 */
+    float dly_fb, dly_wet;         /* smoothed feedback / return level */
+    float dly_len, dly_len_target; /* samples, follows the tempo */
+    float dly_lp;                  /* one-pole state in the feedback path */
+    int dly_pos, dly_quiet;
+    float dly_buf[HKH_DELAY_MAX];
     hkh_rack_voice rack[HKH_RACK];
     uint32_t r_pending;            /* auditions, bit per pad */
     unsigned r_hits;
@@ -93,6 +101,7 @@ void hkh_engine_rack_toggle_step(hkh_engine *e, int pad, int step);
 void hkh_engine_rack_set_mute(hkh_engine *e, int pad, int on);
 void hkh_engine_rack_set_vol(hkh_engine *e, int pad, float vol);
 void hkh_engine_rack_trigger(hkh_engine *e, int pad);
+void hkh_engine_rack_set_fb(hkh_engine *e, float fb);
 
 /* Continuous parameters. */
 void hkh_engine_set_param(hkh_engine *e, int index, float value);

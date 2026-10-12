@@ -146,7 +146,7 @@ export const C = {
 /* ---- ui_state ------------------------------------------------------------ */
 
 /* The DSP's one-line state; see write_ui_state in dsp/hkh_plugin.c. */
-export const UI_STATE_FIELDS = 18 + 14 + 16 + 2 + 2 + 32 + 32;
+export const UI_STATE_FIELDS = 18 + 14 + 16 + 2 + 2 + 32 + 32 + 1;
 
 export function parseUiState(text) {
     if (typeof text !== "string" || text.length === 0) return null;
@@ -169,7 +169,7 @@ export function parseUiState(text) {
         rec: n[15] === 1, userMask: n[16], len: n[17] === 16 ? 16 : 8, params, motion,
         rumbleOut: n[48] / 1000, build: n[49],
         rackMask: n[50], rackMute: n[51],
-        rp: n.slice(52, 84), rv: n.slice(84, 116).map((x) => x / 1000),
+        rp: n.slice(52, 84), rv: n.slice(84, 116).map((x) => x / 1000), rfb: n[116] / 1000,
     };
 }
 
@@ -177,7 +177,7 @@ export function defaultState() {
     return parseUiState("3,0,-1,4369,17476,4369,17476,0,0,0,0,1,0,1,0,0,0,8," +
         "800,250,500,150,250,0,0,700,500,0,100,200,500,0," +
         Array(16).fill(-1).join(",") + ",0,0,0,0," +
-        Array(32).fill(0).join(",") + "," + Array(32).fill(800).join(","));
+        Array(32).fill(0).join(",") + "," + Array(32).fill(800).join(",") + ",0");
 }
 
 /* ---- LEDs (pure) --------------------------------------------------------- */
@@ -649,8 +649,18 @@ export function createUi(host) {
             return;
         }
         if (s.mode === MODE_RACK) {
-            /* Hold a rack pad: knob 1 = its volume. */
             const pad = ui.rackHeld, d = decodeDelta(value);
+            if (knob === 6 && d !== 0) {
+                /* Knob 7: the rack delay's FB (0 = no delay). */
+                const now = host.now();
+                const step = knobStep(now - lastTurn[knob]);
+                lastTurn[knob] = now;
+                s.rfb = Math.min(1, Math.max(0, s.rfb + d * step));
+                pending.set("r_fb", s.rfb);
+                say(s.rfb > 0 ? `DELAY FB ${Math.round(s.rfb * 100)}%` : "DELAY OFF");
+                return;
+            }
+            /* Hold a rack pad: knob 1 = its volume. */
             if (pad < 0 || d === 0) return;
             if (knob !== 0) return;
             const now = host.now();
@@ -755,7 +765,8 @@ export function createUi(host) {
         g.fillRect(0, 0, 128, 11, 1);
         const rack = s.mode === MODE_RACK;
         g.print(2, 2, rack ? "RACK" : hat ? "HAT" : "KICK", 0);
-        let info = rack ? (ui.rackHeld >= 0 ? `PAD ${ui.rackHeld + 1}` : `${s.len} STEPS`)
+        let info = rack ? (ui.rackHeld >= 0 ? `PAD ${ui.rackHeld + 1}`
+                          : s.rfb > 0 ? `DLY ${Math.round(s.rfb * 100)}%` : `${s.len} STEPS`)
                  : hat ? HAT_MODELS[s.hmodel] || "?"
                        : `${KICK_MODELS[s.kmodel] || "?"}+${digitalName(s, s.ksample)}`;
         if (s.rec && (tickCount >> 4) % 2 === 0) info = "REC " + info;
