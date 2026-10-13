@@ -89,6 +89,43 @@ export const KNOB_NAMES = [
 ];
 export const PARAM_KEYS = [...KNOBS[0].slice(0, 7), ...KNOBS[1].slice(0, 7)];
 
+/* Page 2 (turn the jog): each part's effect page, in real units -- the
+ * order of dsp/hkh_busfx.h. KICK FX = TUBE on the kick only, HAT FX =
+ * HARMONICS on the hat only, RACK FX = BUS COMP on the whole output. */
+const pct = (v) => `${Math.round(v * 100)}%`;
+const db1 = (v) => `${v > 0 ? "+" : ""}${v.toFixed(1)}`;
+export const FX_KEYS = ["kt_sat", "kt_drive", "hh_amt", "hh_freq", "bc_thresh", "bc_ratio",
+    "bc_attack", "bc_release", "bc_schpf", "bc_makeup", "bc_punch"];
+export const FX_DEFS = {
+    kt_sat: { min: 0, max: 1, res: 0.01, def: 0, label: "SAT", name: "TUBE SAT", show: pct },
+    kt_drive: { min: 0, max: 24, res: 0.5, def: 6, label: "DRIVE", name: "TUBE DRIVE", show: (v) => `${v.toFixed(1)}dB` },
+    hh_amt: { min: 0, max: 1, res: 0.01, def: 0, label: "HARM", name: "HARMONICS", show: pct },
+    hh_freq: { options: ["1.9k", "2.8k", "6.6k", "9.8k"], def: 2, label: "FREQ", name: "HARM FREQ" },
+    bc_thresh: { min: -36, max: 0, res: 0.5, def: -12, label: "THRSH", name: "THRESHOLD", show: (v) => `${v.toFixed(1)}dB` },
+    bc_ratio: { options: ["OFF", "2:1", "4:1", "10:1"], def: 0, label: "RATIO", name: "RATIO" },
+    bc_attack: { min: 1, max: 30, res: 0.5, def: 30, label: "ATK", name: "ATTACK", show: (v) => `${v.toFixed(1)}ms` },
+    bc_release: { min: 50, max: 600, res: 10, def: 150, label: "REL", name: "RELEASE", show: (v) => `${Math.round(v)}ms` },
+    bc_schpf: { min: 20, max: 200, res: 5, def: 90, label: "SCHPF", name: "SC HPF", show: (v) => `${Math.round(v)}Hz` },
+    bc_makeup: { min: -12, max: 12, res: 0.5, def: 0, label: "MKUP", name: "MAKEUP", show: (v) => `${db1(v)}dB` },
+    bc_punch: { options: ["OFF", "ON"], def: 1, label: "PUNCH", name: "PUNCH" },
+};
+export const FX_KNOBS = [
+    ["kt_sat", "kt_drive", null, null, null, null, null, null],
+    ["hh_amt", "hh_freq", null, null, null, null, null, null],
+    ["bc_thresh", "bc_ratio", "bc_attack", "bc_release", "bc_schpf", "bc_makeup", "bc_punch", null],
+];
+export const FX_TITLES = ["KICK FX", "HAT FX", "BUS COMP"];
+export function fxText(key, v) {
+    const d = FX_DEFS[key];
+    return d.options ? d.options[Math.round(v)] || "?" : d.show(v);
+}
+/* Where a value sits on its knob's travel, 0..1 (for the bar). */
+export function fxPos(key, v) {
+    const d = FX_DEFS[key];
+    return d.options ? Math.round(v) / (d.options.length - 1) : (v - d.min) / (d.max - d.min);
+}
+const ENUM_TICKS = 10;         /* encoder counts per choice on an option knob */
+
 export const KICK_MODELS = ["808", "909", "IND"];
 /* The four built-in digital kicks (scripts/gen_digital_kicks.py); a slot
  * holding the user's own WAV shows as USR1-4 instead. */
@@ -109,7 +146,7 @@ const PICKERS = {
 const KNOB_CC_FIRST = 71;
 const JOG_TURN = 14;
 const JOG_CLICK = 3;
-const PAGES = 2;               /* 0: play, 1: settings (8 / 16 steps) */
+const PAGES = 2;               /* 0: play, 1: this part's effects + 8 / 16 steps */
 const SHIFT_CC = 49;
 const PAGE_TURN_MS = 1000;     /* knob 8: a pause this long forgets a part-turn */
 export const PAGE_TICKS = 40;  /* knob 8: encoder counts per page (~120 degrees) */
@@ -146,7 +183,8 @@ export const C = {
 /* ---- ui_state ------------------------------------------------------------ */
 
 /* The DSP's one-line state; see write_ui_state in dsp/hkh_plugin.c. */
-export const UI_STATE_FIELDS = 18 + 14 + 16 + 2 + 2 + 32 + 32 + 1 + 1;   // + the rack sidechain (0.6.3)
+export const UI_STATE_FIELDS = 18 + 14 + 16 + 2 + 2 + 32 + 32 + 1 + 1   // + the rack sidechain (0.6.3)
+    + 11 + 2;                                                            // + page-2 effects, GR, PUNCH limit (0.7.0)
 
 export function parseUiState(text) {
     if (typeof text !== "string" || text.length === 0) return null;
@@ -171,6 +209,8 @@ export function parseUiState(text) {
         rackMask: n[50], rackMute: n[51],
         rp: n.slice(52, 84), rv: n.slice(84, 116).map((x) => x / 1000), rfb: n[116] / 1000,
         rsc: n[117] / 1000,
+        fx: Object.fromEntries(FX_KEYS.map((k, i) => [k, n[118 + i] / 10])),
+        bcGr: n[129] / 10, bcLim: n[130] === 1,
     };
 }
 
@@ -178,7 +218,8 @@ export function defaultState() {
     return parseUiState("3,0,-1,4369,17476,4369,17476,0,0,0,0,1,0,1,0,0,0,8," +
         "800,250,500,150,250,0,0,700,500,0,100,200,500,0," +
         Array(16).fill(-1).join(",") + ",0,0,0,0," +
-        Array(32).fill(0).join(",") + "," + Array(32).fill(800).join(",") + ",0,0");
+        Array(32).fill(0).join(",") + "," + Array(32).fill(800).join(",") + ",0,0," +
+        FX_KEYS.map((k) => Math.round(FX_DEFS[k].def * 10)).join(",") + ",0,0");
 }
 
 /* ---- LEDs (pure) --------------------------------------------------------- */
@@ -364,6 +405,7 @@ export function createUi(host) {
     let reassertRow = 0;
     let dirty = true;
     let page = 0;
+    const enumAcc = new Array(8).fill(0);   /* option knobs: counts toward the next choice */
 
     const set = (key, value) => host.setParam(key, String(value));
 
@@ -616,12 +658,13 @@ export function createUi(host) {
         readDue = true;
     }
 
-    /* ---- jog: page 1 plays, page 2 sets the length ---- */
+    /* ---- jog: page 1 plays, page 2 = this part's effects (+ the length) ---- */
     function onJog(cc, value) {
         if (cc === JOG_TURN) {
             const d = decodeDelta(value);
             if (d > 0 && page < PAGES - 1) page++;
             else if (d < 0 && page > 0) page--;
+            if (page === 1) { stopRecording(); touched = -1; touchShowUntil = 0; }
             dirty = true;
         } else if (cc === JOG_CLICK && value > 0 && page === 1) {
             const next = s.len === 16 ? 8 : 16;
@@ -653,6 +696,7 @@ export function createUi(host) {
             dirty = true;
             return;
         }
+        if (page === 1) { onFxKnob(knob, value); return; }
         if (s.mode === MODE_RACK) {
             const pad = ui.rackHeld, d = decodeDelta(value);
             if (knob === 6 && d !== 0) {
@@ -701,8 +745,48 @@ export function createUi(host) {
         dirty = true;
     }
 
+    /* Page 2: the part's effect knobs, in real units. */
+    function onFxKnob(knob, value) {
+        const key = FX_KNOBS[s.mode][knob];
+        const d = decodeDelta(value);
+        if (d === 0) return;
+        const now = host.now();
+        if (key) {
+            const def = FX_DEFS[key];
+            let v = s.fx[key];
+            if (def.options) {
+                if (Math.sign(d) !== Math.sign(enumAcc[knob])) enumAcc[knob] = 0;
+                enumAcc[knob] += d;
+                if (Math.abs(enumAcc[knob]) < ENUM_TICKS) return;
+                v = Math.min(def.options.length - 1, Math.max(0, Math.round(v) + Math.sign(enumAcc[knob])));
+                enumAcc[knob] = 0;
+            } else {
+                const step = knobStep(now - lastTurn[knob]);
+                v += d * step * (def.max - def.min);
+                v = Math.min(def.max, Math.max(def.min, Math.round(v / def.res) * def.res));
+            }
+            lastTurn[knob] = now;
+            if (v === s.fx[key]) return;
+            s.fx[key] = v;
+            pending.set(key, v);
+        }
+        lastTouchKnob = knob;
+        touchShowUntil = now + TOUCH_SHOW_MS;
+        dirty = true;
+    }
+
     function onKnobTouch(knob, down) {
-        if (s.mode === MODE_RACK || knob === 7) return;     /* knob 8 turns pages */
+        if (knob === 7) return;                              /* knob 8 turns pages */
+        if (page === 1) {
+            /* page 2: a touch only shows the knob (no DECAY recording here) */
+            const now = host.now();
+            if (down) { touched = knob; lastTouchKnob = knob; }
+            else if (touched === knob) touched = -1;
+            touchShowUntil = now + TOUCH_SHOW_MS;
+            dirty = true;
+            return;
+        }
+        if (s.mode === MODE_RACK) return;
         const now = host.now();
         if (down) {
             touched = knob;
@@ -779,27 +863,19 @@ export function createUi(host) {
         /* Header: the knob target, inverted, so it reads from across a room. */
         g.fillRect(0, 0, 128, 11, 1);
         const rack = s.mode === MODE_RACK;
-        g.print(2, 2, rack ? "RACK" : hat ? "HAT" : "KICK", 0);
+        if (page === 1) {
+            g.print(2, 2, FX_TITLES[s.mode] || "?", 0);
+            const gr = s.mode === MODE_RACK ? (s.fx.bc_ratio > 0 ? `GR ${s.bcGr > 0 ? "-" : ""}${s.bcGr.toFixed(1)}` : "OFF") : "";
+            if (gr) g.print(126 - tw(gr), 2, gr, 0);
+        } else g.print(2, 2, rack ? "RACK" : hat ? "HAT" : "KICK", 0);
         let info = rack ? (ui.rackHeld >= 0 ? `PAD ${ui.rackHeld + 1}`
                           : s.rfb > 0 ? `DLY ${Math.round(s.rfb * 100)}%` : `${s.len} STEPS`)
                  : hat ? HAT_MODELS[s.hmodel] || "?"
                        : `${KICK_MODELS[s.kmodel] || "?"}+${digitalName(s, s.ksample)}`;
         if (s.rec && (tickCount >> 4) % 2 === 0) info = "REC " + info;
-        g.print(126 - tw(info), 2, info, 0);
+        if (page !== 1) g.print(126 - tw(info), 2, info, 0);
 
-        if (page === 1) {
-            /* Settings: one choice, made with the jog. */
-            g.print(0, 16, "SETTINGS", 1);
-            g.print(0, 30, "STEPS (KICK+HAT)", 1);
-            [8, 16].forEach((n, k) => {
-                const x = 8 + k * 60, on = s.len === n;
-                if (on) g.fillRect(x, 40, 50, 13, 1); else g.drawRect(x, 40, 50, 13, 1);
-                g.print(x + 20 - (n > 9 ? 3 : 0), 43, String(n), on ? 0 : 1);
-            });
-            g.print(0, 57, "click: switch  turn: back", 1);
-            dirty = false;
-            return;
-        }
+        if (page === 1) { drawFx(g, tw); dirty = false; return; }
 
         if (rack) { drawRack(g, tw); dirty = false; return; }
 
@@ -876,6 +952,39 @@ export function createUi(host) {
             }
         }
         dirty = false;
+    }
+
+    /* Page 2: the part's effect knobs, and the shared 8 / 16 steps (jog click). */
+    function drawFx(g, tw) {
+        const keys = FX_KNOBS[s.mode] || [];
+        const now = host.now();
+        const bigKnob = touched >= 0 ? touched : (now < touchShowUntil ? lastTouchKnob : -1);
+        if (bigKnob >= 0 && bigKnob < 7) {
+            const key = keys[bigKnob];
+            if (key) {
+                const v = s.fx[key], txt = fxText(key, v);
+                g.print(0, 16, `${bigKnob + 1} ${FX_DEFS[key].name}`, 1);
+                g.print(126 - tw(txt), 16, txt, 1);
+                g.drawRect(0, 28, 128, 12, 1);
+                g.fillRect(2, 30, Math.round(124 * Math.min(1, Math.max(0, fxPos(key, v)))), 8, 1);
+                if (key === "bc_punch" && s.bcLim) g.print(0, 44, "PUNCH IS LIMITING", 1);
+            } else {
+                g.print(0, 16, `${bigKnob + 1} not assigned`, 1);
+            }
+        } else {
+            /* the knobs, two rows of four: label, value */
+            for (let k = 0; k < 7; k++) {
+                const key = keys[k];
+                if (!key) continue;
+                const x = (k % 4) * 32, y = k < 4 ? 14 : 34;
+                g.print(x + 1, y, FX_DEFS[key].label, 1);
+                let txt = fxText(key, s.fx[key]);
+                if (key === "bc_punch" && s.bcLim) txt += "*";
+                g.print(x + 1, y + 9, txt, 1);
+            }
+        }
+        /* bottom line: the shared step length, switched with a jog click */
+        g.print(0, 56, `STEPS ${s.len}  click: 8/16`, 1);
     }
 
     /* The rack: the 6 x 4 block as on the pads, or a held pad's detail. */

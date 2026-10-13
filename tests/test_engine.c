@@ -759,6 +759,141 @@ static void test_fx_levels(void) {
     printf("PASS: DRIVE holds level, COMP tightens (shorter, not longer), RUMBLE fills gaps not punch, REVERB sends, headroom\n");
 }
 
+/* ---- page 2: KICK FX (tube), HAT FX (harmonics), BUS COMP ------------------ */
+typedef struct { double rms, sub, mid, air, peak; float out[44100 * 4]; int n; } fx_run;
+static fx_run FXR;
+static void fx_render(int model, int kick, int hat, const int *fi, const float *fv, int nfx) {
+    static hkh_engine g;
+    hkh_engine_init(&g, 5);
+    g.k_model = model;
+    g.k_mute = !kick;
+    g.h_mute = !hat;
+    for (int i = 0; i < nfx; ++i) hkh_engine_set_fx(&g, fi[i], fv[i]);
+    transport t = {0.0, 130.0f, 1};
+    double a1 = 0, a2 = 0, b1 = 0, b2 = 0, c1 = 0, c2 = 0, s = 0, sub = 0, mid = 0, air = 0;
+    const double k100 = 1 - exp(-2 * M_PI * 100 / 44100.), k1k = 1 - exp(-2 * M_PI * 1000 / 44100.),
+                 k8k = 1 - exp(-2 * M_PI * 8000 / 44100.);
+    FXR.n = 0; FXR.peak = 0;
+    int blocks = 44100 * 4 / BLOCK;
+    for (int b = 0; b < blocks; ++b) {
+        render(&g, &t);
+        for (int i = 0; i < BLOCK; ++i) {
+            FXR.out[FXR.n++] = L[i];
+            if (b < blocks / 2) continue;
+            double x = L[i];
+            a1 += k100 * (x - a1); a2 += k100 * (a1 - a2);
+            b1 += k1k * (x - b1); b2 += k1k * (b1 - b2);
+            c1 += k8k * (x - c1); c2 += k8k * (c1 - c2);
+            s += x * x; sub += a2 * a2; mid += (c2 - b2) * (c2 - b2); air += (x - c2) * (x - c2);
+            if (fabs(x) > FXR.peak) FXR.peak = fabs(x);
+        }
+    }
+    FXR.rms = 10 * log10(s + 1e-20); FXR.sub = 10 * log10(sub + 1e-20);
+    FXR.mid = 10 * log10(mid + 1e-20); FXR.air = 10 * log10(air + 1e-20);
+}
+/* tol 0 = bit-exact. The voice-isolation checks allow -100 dBFS: a muted
+ * kick path still carries a few 1e-7 of residue, which the TUBE lifts as
+ * designed (it raises the quiet parts). */
+static int fx_same_as_tol(const float *ref, int n, float tol) {
+    if (n != FXR.n) return 0;
+    for (int i = 0; i < n; ++i) if (fabsf(ref[i] - FXR.out[i]) > tol) return 0;
+    return 1;
+}
+static int fx_same_as(const float *ref, int n) { return fx_same_as_tol(ref, n, 0.0f); }
+static float FXREF[44100 * 4];
+
+static void test_page2_fx(void) {
+    const int kt[2] = {FX_KT_SAT, FX_KT_DRIVE};
+    const float kt_on[2] = {1.0f, 24.0f};
+    const int hh[2] = {FX_HH_AMT, FX_HH_FREQ};
+
+    /* KICK FX touches only the kick; HAT FX only the hat (bit-exact) */
+    fx_render(KICK_909, 0, 1, NULL, NULL, 0); memcpy(FXREF, FXR.out, sizeof(float) * FXR.n);
+    fx_render(KICK_909, 0, 1, kt, kt_on, 2);
+    assert(fx_same_as_tol(FXREF, FXR.n, 1e-5f));
+    fx_render(KICK_909, 1, 0, NULL, NULL, 0); memcpy(FXREF, FXR.out, sizeof(float) * FXR.n);
+    const float hh_on[2] = {1.0f, 3.0f};
+    fx_render(KICK_909, 1, 0, hh, hh_on, 2);
+    assert(fx_same_as_tol(FXREF, FXR.n, 1e-5f));
+
+    /* TUBE: the sub is kept, the mids / top of the kick come up */
+    for (int m = 0; m < 3; ++m) {
+        fx_render(m, 1, 0, NULL, NULL, 0);
+        double sub0 = FXR.sub, mid0 = FXR.mid;
+        fx_render(m, 1, 0, kt, kt_on, 2);
+        printf("  KICK TUBE 100%%/24 dB m%d: sub %+.2f dB, 1-8 kHz %+.1f dB, peak %.2f\n", m, FXR.sub - sub0, FXR.mid - mid0, FXR.peak);
+        fflush(stdout);
+        assert(fabs(FXR.sub - sub0) < 1.5);
+        assert(FXR.mid - mid0 > 1.5);
+    }
+    /* HARMONICS: adds energy where it was asked to */
+    fx_render(KICK_909, 0, 1, NULL, NULL, 0);
+    double mid0 = FXR.mid, air0 = FXR.air;
+    const float h98[2] = {1.0f, 3.0f}, h28[2] = {1.0f, 1.0f};
+    fx_render(KICK_909, 0, 1, hh, h98, 2);
+    double air98 = FXR.air - air0;
+    fx_render(KICK_909, 0, 1, hh, h28, 2);
+    double mid28 = FXR.mid - mid0;
+    printf("  HAT HARMONICS 100%%: 9.8k -> air %+.2f dB, 2.8k -> 1-8 kHz %+.2f dB\n", air98, mid28);
+    fflush(stdout);
+    assert(air98 > 0.5 && mid28 > 0.5);
+
+    /* BUS COMP: OFF is bit-exact; on, it reduces; PUNCH turns 10:1 into 4:1 */
+    fx_render(KICK_909, 1, 1, NULL, NULL, 0); memcpy(FXREF, FXR.out, sizeof(float) * FXR.n);
+    double rms0 = FXR.rms;
+    const int bc[4] = {FX_BC_RATIO, FX_BC_THRESH, FX_BC_PUNCH, FX_BC_MAKEUP};
+    const float off[4] = {0.0f, -36.0f, 0.0f, 12.0f};
+    fx_render(KICK_909, 1, 1, bc, off, 4);
+    assert(fx_same_as(FXREF, FXR.n));                     /* RATIO OFF: MAKEUP leaves too */
+    const float c4[4] = {2.0f, -24.0f, 1.0f, 0.0f}, c10p[4] = {3.0f, -24.0f, 1.0f, 0.0f}, c10[4] = {3.0f, -24.0f, 0.0f, 0.0f};
+    fx_render(KICK_909, 1, 1, bc, c4, 4);
+    double rms4 = FXR.rms; memcpy(FXREF, FXR.out, sizeof(float) * FXR.n);
+    fx_render(KICK_909, 1, 1, bc, c10p, 4);
+    assert(fx_same_as(FXREF, FXR.n));                     /* PUNCH: 10:1 runs as 4:1 */
+    fx_render(KICK_909, 1, 1, bc, c10, 4);
+    double rms10 = FXR.rms;
+    printf("  BUS COMP -24 dB: 4:1 %+.1f dB, 10:1 (no PUNCH) %+.1f dB\n", rms4 - rms0, rms10 - rms0);
+    fflush(stdout);
+    assert(rms4 - rms0 < -3.0 && rms10 < rms4 - 0.5);
+    const float mk[4] = {2.0f, -24.0f, 1.0f, 12.0f};
+    fx_render(KICK_909, 1, 1, bc, mk, 4);
+    assert(FXR.rms > rms4 + 3.0 && FXR.peak <= HKH_CEILING + 1e-6);   /* MAKEUP, under the limiter */
+
+    /* a switch never steps the waveform: SAT / HARM / RATIO jumping mid-kick */
+    const int keys[3] = {FX_KT_SAT, FX_HH_AMT, FX_BC_RATIO};
+    const float to[3] = {1.0f, 1.0f, 3.0f};
+    for (int k = 0; k < 3; ++k) {
+        /* 0: steady at the end value, 1: switching, 2: steady at the start
+         * value. A switch is no steeper than the steeper of the two ends. */
+        float worst[3] = {0, 0, 0};
+        for (int sw = 0; sw < 3; ++sw) {
+            static hkh_engine g;
+            hkh_engine_init(&g, 8);
+            g.k_model = KICK_808;
+            hkh_engine_set_param(&g, P_K_DECAY, 1.0f);
+            hkh_engine_set_fx(&g, FX_KT_DRIVE, 24.0f);
+            hkh_engine_set_fx(&g, FX_BC_THRESH, -36.0f);
+            if (!sw) hkh_engine_set_fx(&g, keys[k], to[k]);       /* steady at the end value */
+            transport t = {0.0, 120.0f, 0};
+            hkh_engine_trigger_kick(&g, 1.0f);
+            hkh_engine_trigger_hat(&g, 1.0f, 1.0f);
+            float prev = 0;
+            for (int b = 0; b < 110; ++b) {
+                if (sw == 1 && b == 100) hkh_engine_set_fx(&g, keys[k], to[k]);
+                render(&g, &t);
+                for (int i = 0; i < BLOCK; ++i) {
+                    if (b >= 100) worst[sw] = fmaxf(worst[sw], fabsf(L[i] - prev));
+                    prev = L[i];
+                }
+            }
+        }
+        const float steady = fmaxf(worst[0], worst[2]);
+        if (!(worst[1] <= steady * 1.25f + 0.002f)) fprintf(stderr, "fx switch %d: steady %.5f switching %.5f\n", k, steady, worst[1]);
+        assert(worst[1] <= steady * 1.25f + 0.002f);
+    }
+    printf("PASS: page 2 FX: each on its own voice, TUBE keeps the sub, HARMONICS add, BUS COMP off = exact, PUNCH, no clicks\n");
+}
+
 /* Random knobs, dense patterns, fills: never above -3 dBFS, never NaN. */
 static void test_fx_fuzz(void) {
     static hkh_engine g;
@@ -766,6 +901,8 @@ static void test_fx_fuzz(void) {
     for (int trial = 0; trial < 120; ++trial) {
         hkh_engine_init(&g, trial + 1);
         for (int p = 0; p < P_COUNT; ++p) hkh_engine_set_param(&g, p, hkh_rand01(&seed) < 0.3f ? 1.0f : hkh_rand01(&seed));
+        for (int f = 0; f < FX_COUNT; ++f)
+            hkh_engine_set_fx(&g, f, hkh_fx_defs[f].min + hkh_rand01(&seed) * (hkh_fx_defs[f].max - hkh_fx_defs[f].min));
         g.k_model = (int)(hkh_rand01(&seed) * 3);
         g.h_model = (int)(hkh_rand01(&seed) * 4);
         g.k_sample = (int)(hkh_rand01(&seed) * 4);
@@ -777,6 +914,8 @@ static void test_fx_fuzz(void) {
         for (int b = 0; b < 700; ++b) {
             if (b % 50 == 0) {           /* knobs move while it plays */
                 hkh_engine_set_param(&g, (int)(hkh_rand01(&seed) * P_COUNT), hkh_rand01(&seed));
+                { int f = (int)(hkh_rand01(&seed) * FX_COUNT);
+                  hkh_engine_set_fx(&g, f, hkh_fx_defs[f].min + hkh_rand01(&seed) * (hkh_fx_defs[f].max - hkh_fx_defs[f].min)); }
                 hkh_engine_set_fill(&g, 0, hkh_rand01(&seed) < 0.5f);
                 hkh_engine_set_fill(&g, 1, hkh_rand01(&seed) < 0.5f);
             }
@@ -1264,6 +1403,7 @@ int main(void) {
     test_hat_models();
     test_hat_follow_and_choke();
     test_fx_levels();
+    test_page2_fx();
     test_fx_fuzz();
     test_fx_tails();
     test_comp_every_hit();

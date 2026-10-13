@@ -82,6 +82,33 @@
       ]
     },
     {
+      "title": "Page 2 FX",
+      "lines": [
+        "Turn the jog: page 2",
+        "of KICK / HAT / RACK.",
+        "Jog click: 8/16 steps",
+        "All FX start OFF.",
+        "",
+        "KICK FX (kick only)",
+        "1 SAT  2 DRIVE",
+        " tube above 120 Hz,",
+        " sub never bent",
+        "",
+        "HAT FX (hat only)",
+        "1 HARM  2 FREQ",
+        " 1.9k 2.8k 6.6k 9.8k",
+        "",
+        "BUS COMP (RACK pg2)",
+        " whole PISTON out",
+        "1 THRSH 2 RATIO",
+        "3 ATK 4 REL 5 SCHPF",
+        "6 MKUP 7 PUNCH",
+        "RATIO OFF = bypass",
+        "GR shown top right",
+        "PUNCH ON*: limiting"
+      ]
+    },
+    {
       "title": "Hat decay motion",
       "lines": [
         "HAT surface, touch k3:",

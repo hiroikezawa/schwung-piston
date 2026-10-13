@@ -81,7 +81,7 @@ def block(inst=None):
 
 def ui_state(inst=None):
     f = read("ui_state", inst=inst).split(",")
-    assert f[0] == "3" and len(f) == 18 + 14 + 16 + 2 + 2 + 64 + 2, f  # ... rack FB, sidechain
+    assert f[0] == "3" and len(f) == 18 + 14 + 16 + 2 + 2 + 64 + 2 + 11 + 2, f  # ... rack FB, sidechain, page-2 FX, GR, PUNCH limit
     return [int(x) for x in f]
 
 
@@ -196,6 +196,24 @@ old = '{"v":1,"mode":0,"km":1,"ks":0,"hm":1,"kp":17,"hp":68,"p":[%s],"mo":[0.5,-
 write("state", old, inst=other)
 d = json.loads(read("state", inst=other))
 assert d["kp"] == 17 and d["len"] == 8 and d["mo"][0] == 0.5 and d["mo"][8] == -1, d
+# page-2 effects (0.7.0): saved, restored, an older state = all OFF (defaults)
+FX_DEF = [0, 6, 0, 2, -12, 0, 30, 150, 90, 0, 1]
+assert d["fx"] == FX_DEF, d["fx"]
+for key, val in [("kt_sat", 0.7), ("kt_drive", 18), ("hh_amt", 0.4), ("hh_freq", 3), ("bc_thresh", -20),
+                 ("bc_ratio", 2), ("bc_attack", 10), ("bc_release", 300), ("bc_schpf", 120), ("bc_makeup", 4), ("bc_punch", 0)]:
+    write(key, val, inst=other)
+    assert abs(float(read(key, inst=other)) - val) < 1e-4, key
+write("bc_ratio", 9, inst=other); assert float(read("bc_ratio", inst=other)) == 3      # clamped
+write("bc_thresh", "junk", inst=other); assert float(read("bc_thresh", inst=other)) == -20
+saved = read("state", inst=other)
+fresh = create(b".", None)
+write("state", saved, inst=fresh)
+assert json.loads(read("state", inst=fresh))["fx"] == json.loads(saved)["fx"]
+f = ui_state(fresh)
+assert f[118:129] == [7, 180, 4, 30, -200, 30, 100, 3000, 1200, 40, 0], f[118:129]
+write("state", old, inst=fresh)
+assert json.loads(read("state", inst=fresh))["fx"] == FX_DEF
+destroy(fresh)
 destroy(other)
 
 # --- presets: one voice's sound + pattern, the other voice untouched ------------

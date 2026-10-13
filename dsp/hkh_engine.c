@@ -62,6 +62,9 @@ static void voices_init(hkh_engine *e) {
     hkh_drive_init(&v->hdrive, 20.0f, 19000.0f, 10000.0f);
     hkh_comp_init(&v->kcomp, 0);
     hkh_comp_init(&v->hcomp, 1);
+    hkh_ktube_init(&v->ktube);
+    hkh_harm_init(&v->hharm);
+    hkh_buscomp_init(&v->bcomp);
     hkh_rumble_init(&v->rumble);
     hkh_reverb_init(&v->reverb);
     hkh_limiter_init(&v->limiter);
@@ -110,6 +113,9 @@ static void voices_block(hkh_engine *e, int frames) {
     hkh_drive_block(&v->hdrive, e->param[P_H_DRIVE], frames);
     hkh_comp_block(&v->kcomp, e->param[P_K_COMP], frames);
     hkh_comp_block(&v->hcomp, e->param[P_H_COMP], frames);
+    hkh_ktube_block(&v->ktube, e->fx[FX_KT_SAT], e->fx[FX_KT_DRIVE], frames);
+    hkh_harm_block(&v->hharm, e->fx[FX_HH_AMT], (int)e->fx[FX_HH_FREQ], frames);
+    hkh_buscomp_block(&v->bcomp, e->fx, frames);
     hkh_rumble_block(&v->rumble, e->param[P_K_RUMBLE], frames);
     /* Gains ramp linearly to a smoothed target across the block. */
     float f = (float)frames;
@@ -187,9 +193,9 @@ static void voices_tick(hkh_engine *e, float *l, float *r) {
     v->ksend += v->ksend_step;
     v->hsend += v->hsend_step;
     float k = v->gain_a * hkh_akick_tick(&v->akick) + v->gain_d * hkh_digital_tick(&v->dkick);
-    k = hkh_comp_tick(&v->kcomp, hkh_drive_tick(&v->kdrive, k)) * v->kvol;
+    k = hkh_ktube_tick(&v->ktube, hkh_comp_tick(&v->kcomp, hkh_drive_tick(&v->kdrive, k))) * v->kvol;
     float h = hkh_hat_tick(&v->hat);
-    h = hkh_comp_tick(&v->hcomp, hkh_drive_tick(&v->hdrive, h)) * v->hvol;
+    h = hkh_harm_tick(&v->hharm, hkh_comp_tick(&v->hcomp, hkh_drive_tick(&v->hdrive, h))) * v->hvol;
     h = hkh_tanh(h * (1.0f / HAT_CEILING)) * HAT_CEILING;
     float rumble = hkh_rumble_tick(&v->rumble, k);
     /* Metered for the screen: proof on the device that RUMBLE is producing,
@@ -220,6 +226,7 @@ static void voices_tick(hkh_engine *e, float *l, float *r) {
     e->sc_gain += (1.0f - e->r_sc * e->sc_env - e->sc_gain) * SC_SMOOTH;
     rs *= e->sc_gain;
     float outl = kb + h + rl + rs, outr = kb + h + rr + rs;
+    hkh_buscomp_tick(&v->bcomp, &outl, &outr);
     hkh_limiter_tick(&v->limiter, &outl, &outr);
     *l = outl;
     *r = outr;
@@ -232,6 +239,7 @@ void hkh_engine_init(hkh_engine *e, uint32_t seed) {
     e->sc_gain = 1.0f;
     e->sc_t = e->sc_len = 1.0f;
     for (int i = 0; i < P_COUNT; ++i) e->param[i] = hkh_param_defaults[i];
+    for (int i = 0; i < FX_COUNT; ++i) e->fx[i] = hkh_fx_defs[i].def;
     e->k_model = KICK_909;
     e->k_sample = 0;
     e->h_model = HAT_909;
@@ -274,6 +282,11 @@ static void fire_rack(hkh_engine *e, int pad) {
 
 void hkh_engine_rack_set_fb(hkh_engine *e, float fb) {
     if (isfinite(fb)) e->r_fb = hkh_clamp(fb, 0.0f, 1.0f);
+}
+
+void hkh_engine_set_fx(hkh_engine *e, int index, float value) {
+    if (index < 0 || index >= FX_COUNT) return;
+    e->fx[index] = hkh_fx_clamp(index, value);
 }
 
 void hkh_engine_rack_set_sc(hkh_engine *e, float depth) {
@@ -565,6 +578,12 @@ void hkh_engine_render(hkh_engine *e, float *out_l, float *out_r, int frames,
         v->hvol += v->hvol_step * (float)frames;
         v->ksend += v->ksend_step * (float)frames;
         v->hsend += v->hsend_step * (float)frames;
+        /* the page-2 effects' ramps land too (they compute nothing here) */
+        v->ktube.sat = fmaxf(0.0f, v->ktube.sat + v->ktube.sat_step * (float)frames);
+        v->ktube.drv += v->ktube.drv_step * (float)frames;
+        v->hharm.amt = fmaxf(0.0f, v->hharm.amt + v->hharm.amt_step * (float)frames);
+        v->bcomp.on = fmaxf(0.0f, v->bcomp.on + v->bcomp.on_step * (float)frames);
+        v->bcomp.mk += v->bcomp.mk_step * (float)frames;
         v->rumble_meter *= 0.994f;
         e->sc_t = fminf(e->sc_t + (float)frames, e->sc_len);
         e->sc_env = sc_duck(e);

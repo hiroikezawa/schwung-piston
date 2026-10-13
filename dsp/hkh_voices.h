@@ -5,7 +5,8 @@
  *                                                            +--> RUMBLE --> out
  *   hat  = model              -> DRIVE -> COMP -> VOLUME ---+--> out
  *   kick * K REVERB + hat * H REVERB -> shared REVERB ------> out
- *   out -> DC block -> -3 dBFS limiter
+ *   kick: ... COMP -> TUBE (KICK FX) -> VOLUME;  hat: ... COMP -> HARMONICS (HAT FX) -> VOLUME
+ *   out -> BUS COMP (RACK FX) -> DC block -> -3 dBFS limiter
  */
 #ifndef HKH_VOICES_H
 #define HKH_VOICES_H
@@ -15,6 +16,7 @@
 #include "hkh_digital.h"
 #include "hkh_hat.h"
 #include "hkh_fx.h"
+#include "hkh_busfx.h"
 
 typedef struct {
     hkh_akick akick;
@@ -27,6 +29,9 @@ typedef struct {
     hkh_comp kcomp, hcomp;
     hkh_rumble rumble;
     hkh_reverb reverb;
+    hkh_ktube ktube;            /* KICK FX page */
+    hkh_harm hharm;             /* HAT FX page */
+    hkh_buscomp bcomp;          /* RACK FX page: the whole output */
     hkh_limiter limiter;
     /* per-sample ramps for the post-effect gains */
     float kvol, kvol_step, hvol, hvol_step;

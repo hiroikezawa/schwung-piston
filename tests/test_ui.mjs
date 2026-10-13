@@ -5,7 +5,7 @@ import fs from "node:fs";
 import {
     createUi, padAt, noteAt, computeLeds, parseUiState, defaultState, knobStep, C,
     MODE_HAT, MODE_RACK, PARAM_KEYS, stepPad, padStep, PRESET_FILE, parsePresets,
-    rackPadAt, rackStepPad, rackPadStep, PAGE_TICKS,
+    rackPadAt, rackStepPad, rackPadStep, PAGE_TICKS, FX_KEYS, FX_DEFS,
 } from "../ui_core.mjs";
 
 /* ---- a mock DSP that speaks the same keys as dsp/hkh_plugin.c ------------- */
@@ -17,9 +17,11 @@ function mockDsp() {
             [k, [0.8, 0.25, 0.5, 0.15, 0.25, 0, 0, 0.7, 0.5, 0, 0.1, 0.2, 0.5, 0][i]])),
         motion: new Array(16).fill(-1),
         rackMask: 0xFFFFFFFF & ~(1 << 4), rackMute: 0, rp: new Array(32).fill(0), rv: new Array(32).fill(0.8), rfb: 0, rsc: 0,
+        fx: Object.fromEntries(FX_KEYS.map((k) => [k, FX_DEFS[k].def])), gr: 0, lim: 0,
     };
     d.set = (key, value) => {
         const v = Number(value);
+        if (key in d.fx) { d.fx[key] = v; return; }
         if (key in d.params) { d.params[key] = v; if (key === "h_decay" && d.rec && d.running) d.motion[d.step] = v; return; }
         switch (key) {
         case "k_step": d.kp ^= 1 << v; break;
@@ -51,7 +53,8 @@ function mockDsp() {
         d.kmute, d.hmute, d.kfill, d.hfill, d.kmodel, d.ksample, d.hmodel, d.mode, d.rec, 0, d.len,
         ...PARAM_KEYS.map((k) => Math.round(d.params[k] * 1000)),
         ...d.motion.map((m) => (m < 0 ? -1 : Math.round(m * 1000))), 250, 605,
-        d.rackMask, d.rackMute, ...d.rp, ...d.rv.map((x) => Math.round(x * 1000)), Math.round(d.rfb * 1000), Math.round(d.rsc * 1000)].join(",");
+        d.rackMask, d.rackMute, ...d.rp, ...d.rv.map((x) => Math.round(x * 1000)), Math.round(d.rfb * 1000), Math.round(d.rsc * 1000),
+        ...FX_KEYS.map((k) => Math.round(d.fx[k] * 10)), Math.round(d.gr * 10), d.lim].join(",");
     return d;
 }
 
@@ -209,7 +212,7 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
     assert.deepEqual(r.sets, [["h_model_pick", "3"]]);
 }
 
-/* ---- the jog: page 2 switches 8 / 16 steps (default 8) ---------------------- */
+/* ---- the jog: page 2 = the part's effects; its click switches 8 / 16 steps -- */
 {
     const r = rig();
     assert.equal(r.ui.state.len, 8);
@@ -218,12 +221,13 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
     assert.deepEqual(r.sets, []);
     r.jog(1);
     r.tick();
-    assert(r.printed.includes("STEPS (KICK+HAT)"));
+    assert(r.printed.includes("KICK FX"));
+    assert(r.printed.includes("STEPS 8  click: 8/16"));
     r.click();
     assert.deepEqual(r.sets, [["length", "16"]]);
     r.jog(-1);
     r.tick(4);
-    assert(!r.printed.includes("STEPS (KICK+HAT)"), "back to the play page");
+    assert(!r.printed.includes("KICK FX"), "back to the play page");
     assert.equal(r.ui.state.len, 16);
     /* 16 steps: row 3 = 1-8, row 4 = 9-16. */
     assert.equal(r.leds[noteAt(2, 0)], C.KICK, "step 1 top");
@@ -234,6 +238,52 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
     assert.deepEqual(r.sets, [["k_step", "3"], ["k_step", "15"]]);
     r.jog(1); r.click();
     assert.equal(r.last()[1], "8");
+}
+
+/* ---- page 2 (jog): KICK FX / HAT FX / BUS COMP knobs ------------------------ */
+{
+    const r = rig();
+    r.jog(1); r.tick();
+    assert(r.printed.includes("KICK FX") && r.printed.includes("SAT") && r.printed.includes("DRIVE"));
+    r.clear();
+    r.turn(0, 20); r.tick();                       /* SAT up, real units 0..1 */
+    assert.equal(r.last()[0], "kt_sat");
+    assert(Number(r.last()[1]) > 0 && Number(r.last()[1]) <= 1);
+    assert(!r.keys().includes("k_vol"), "page 2 knob 1 is not the kick VOL");
+    r.clear();
+    r.turn(2, 30); r.tick();                       /* unassigned knob: nothing */
+    assert.deepEqual(r.sets, []);
+    /* a DECAY touch on the HAT FX page records nothing */
+    r.page(1); r.tick();
+    assert(r.printed.includes("HAT FX"));
+    r.clear();
+    r.touch(2, true); r.touch(2, false);
+    assert(!r.keys().includes("h_motion_rec"));
+    /* an option knob steps once per ENUM_TICKS counts */
+    r.turn(1, 5); r.tick();
+    assert(!r.keys().includes("hh_freq"), "half a click does nothing");
+    r.turn(1, 5); r.tick();
+    assert.deepEqual(r.last(), ["hh_freq", "3.0000"]);
+    r.turn(1, 40); r.tick();
+    assert.equal(r.dsp.fx.hh_freq, 3, "clamped at 9.8k");
+    /* RACK page 2 = BUS COMP: 7 knobs, RATIO starts OFF */
+    r.page(1); r.tick();
+    assert(r.printed.includes("BUS COMP") && r.printed.includes("OFF"));
+    for (const l of ["THRSH", "RATIO", "ATK", "REL", "SCHPF", "MKUP", "PUNCH"]) assert(r.printed.includes(l), l);
+    r.clear();
+    r.turn(1, 10); r.tick();
+    assert.deepEqual(r.last(), ["bc_ratio", "1.0000"]);
+    r.turn(0, -127 + 64); r.tick();               /* a big CCW spin: clamped at -36 */
+    assert(Number(r.dsp.fx.bc_thresh) >= -36);
+    r.turn(4, 3); r.tick();
+    assert.equal(r.last()[0], "bc_schpf");
+    assert.equal(Number(r.last()[1]) % 5, 0, "SC HPF in 5 Hz steps");
+    r.dsp.lim = 1; r.dsp.gr = 2.4; r.t += 1000; r.tick(4);    /* after the turn readout */
+    assert(r.printed.includes("GR -2.4"));
+    assert(r.printed.includes("ON*"), "PUNCH shows it is limiting");
+    /* knob 8 still turns parts, and the jog brings back the play page */
+    r.jog(-1); r.tick(4);
+    assert(!r.printed.includes("BUS COMP"));
 }
 
 /* ---- FILL is momentary, restated while held, released with the screen ------ */

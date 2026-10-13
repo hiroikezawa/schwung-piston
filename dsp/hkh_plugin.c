@@ -19,7 +19,7 @@ _Static_assert(ATOMIC_INT_LOCK_FREE == 2, "instance pool needs lock-free atomics
 
 /* Four chain slots can each hold one; two spare cover a swap in flight. */
 #define HKH_INSTANCES 6
-#define HKH_DSP_BUILD 605          /* major*10000 + minor*100 + patch: 0.6.5; bump with module.json */
+#define HKH_DSP_BUILD 700          /* major*10000 + minor*100 + patch: 0.7.0; bump with module.json */
 
 /* The shim parks a slot whose output stays below 5 LSB for ~1 s and renders
  * it only once every ~0.5 s after that (schwung_shim.c, DSP_IDLE_THRESHOLD).
@@ -116,6 +116,11 @@ static void on_midi(void *ptr, const uint8_t *msg, int len, int source) {
 /* ---- parameters --------------------------------------------------------- */
 static int param_index(const char *key) {
     for (int i = 0; i < P_COUNT; ++i) if (!strcmp(key, hkh_param_keys[i])) return i;
+    return -1;
+}
+
+static int fx_index(const char *key) {
+    for (int i = 0; i < FX_COUNT; ++i) if (!strcmp(key, hkh_fx_defs[i].key)) return i;
     return -1;
 }
 
@@ -262,6 +267,12 @@ static int restore_state(hkh_engine *e, const char *text) {
     float rsc = 0.0f;                       /* the rack sidechain, since 0.6.3 */
     if (find_key(p, "rsc")) { if (!read_key_number(p, "rsc", &rsc) || rsc < 0.0f || rsc > 1.0f) return 0; }
     e->r_sc = rsc;
+    /* The page-2 effects arrived in 0.7.0; an older state leaves them at
+     * their defaults (all off). Out-of-range values are clamped, not refused. */
+    float fx[FX_COUNT];
+    for (int i = 0; i < FX_COUNT; ++i) e->fx[i] = hkh_fx_defs[i].def;
+    if (find_key(p, "fx") && read_key_array(p, "fx", fx, FX_COUNT))
+        for (int i = 0; i < FX_COUNT; ++i) e->fx[i] = hkh_fx_clamp(i, fx[i]);
     /* Rack mutes (a bitmask) are part of the saved state since 0.6.1. */
     unsigned long rm = 0;
     const char *rmp = find_key(p, "rm");
@@ -379,6 +390,8 @@ static void set_param(void *ptr, const char *key, const char *val) {
     float f;
     int n;
     if (idx >= 0) { if (parse_float(val, &f)) hkh_engine_set_param(e, idx, f); return; }
+    int fi = fx_index(key);
+    if (fi >= 0) { if (parse_float(val, &f)) hkh_engine_set_fx(e, fi, f); return; }
 
     if (!strcmp(key, "mode")) { if (parse_int(val, 0, MODE_COUNT - 1, &n)) e->mode = n; }
     else if (!strcmp(key, "k_model")) { if (parse_int(val, 0, KICK_MODEL_COUNT - 1, &n)) hkh_engine_set_kick_model(e, n, 0); }
@@ -446,6 +459,16 @@ static int write_ui_state(hkh_instance *inst, char *buf, int size) {
         n += snprintf(buf + n, size - n, ",%d", milli(e->r_vol[i]));
     /* 116: the rack delay's FB, 117: the rack sidechain depth */
     if (n > 0 && n < size) n += snprintf(buf + n, size - n, ",%d,%d", milli(e->r_fb), milli(e->r_sc));
+    /* 118-128: the page-2 effects in real units x10 (hkh_busfx.h order),
+     * 129: BUS COMP gain reduction x10 dB, deepest since the last read,
+     * 130: PUNCH is limiting a value (1) */
+    for (int i = 0; i < FX_COUNT && n > 0 && n < size; ++i)
+        n += snprintf(buf + n, size - n, ",%d", (int)lroundf(e->fx[i] * 10.0f));
+    if (n > 0 && n < size) {
+        hkh_buscomp *bc = &inst->engine.voices.bcomp;
+        n += snprintf(buf + n, size - n, ",%d,%d", (int)lroundf(bc->gr_peak * 10.0f), hkh_buscomp_effective(e->fx).limited);
+        bc->gr_peak = 0.0f;
+    }
     if (n < 0 || n >= size) { buf[0] = 0; return -1; }
     return n;
 }
@@ -473,7 +496,10 @@ static int write_state(const hkh_engine *e, char *buf, int size) {
     if (n > 0 && n < size) n += snprintf(buf + n, size - n, "],\"rv\":[");
     for (int i = 0; i < HKH_RACK && n > 0 && n < size; ++i)
         n += snprintf(buf + n, size - n, "%s%.4f", i ? "," : "", e->r_vol[i]);
-    if (n > 0 && n < size) n += snprintf(buf + n, size - n, "],\"rf\":%.4f,\"rsc\":%.4f,\"rm\":%u}", e->r_fb, e->r_sc, rack_mute_mask(e));
+    if (n > 0 && n < size) n += snprintf(buf + n, size - n, "],\"rf\":%.4f,\"rsc\":%.4f,\"rm\":%u,\"fx\":[", e->r_fb, e->r_sc, rack_mute_mask(e));
+    for (int i = 0; i < FX_COUNT && n > 0 && n < size; ++i)
+        n += snprintf(buf + n, size - n, "%s%.4f", i ? "," : "", e->fx[i]);
+    if (n > 0 && n < size) n += snprintf(buf + n, size - n, "]}");
     if (n < 0 || n >= size) { buf[0] = 0; return -1; }
     return n;
 }
@@ -485,7 +511,9 @@ static int get_param(void *ptr, const char *key, char *buf, int size) {
     const hkh_engine *e = &inst->engine;
     int idx = param_index(key);
     int n = -1;
+    int fi = fx_index(key);
     if (idx >= 0) n = snprintf(buf, size, "%.4f", e->param[idx]);
+    else if (fi >= 0) n = snprintf(buf, size, "%.4f", e->fx[fi]);
     else if (!strcmp(key, "ui_state")) return write_ui_state(inst, buf, size);
     else if (!strcmp(key, "state")) return write_state(e, buf, size);
     else if (!strcmp(key, "k_preset")) return write_kick_preset(e, buf, size);

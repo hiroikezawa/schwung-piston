@@ -42,6 +42,7 @@ typedef hkh_sample_ref (*hkh_sample_source)(void *ctx, int index);
 
 typedef struct {
     float param[P_COUNT];          /* targets as set */
+    float fx[FX_COUNT];            /* page-2 effects, real units (hkh_busfx.h) */
     int k_model, k_sample, h_model, mode;
     uint16_t k_pattern, h_pattern; /* bit i = step i+1; only `length` used */
     int k_mute, h_mute;
@@ -111,6 +112,8 @@ void hkh_engine_rack_set_sc(hkh_engine *e, float depth);
 
 /* Continuous parameters. */
 void hkh_engine_set_param(hkh_engine *e, int index, float value);
+/* Page-2 effects (KICK FX / HAT FX / BUS COMP), real units, clamped. */
+void hkh_engine_set_fx(hkh_engine *e, int index, float value);
 
 /* Discrete selections. `audition` plays the new sound once if the transport
  * is stopped, so a model can be chosen by ear. */
