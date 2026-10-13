@@ -35,9 +35,10 @@ static float db2lin(float db) { return expf(db * 0.11512925f); }
 #define KT_ASYM_SAT 0.25f
 #define KT_ADAA_EPS 1e-3f
 #define KT_DC_COEF 0.99886f         /* one-pole DC blocker at 8 Hz */
-#define KT_XOVER_HZ 120.0f          /* below this the kick is never bent */
 #define KT_BAND_HZ 6000.0f          /* above this nothing is bent (aliasing) */
-#define KT_REF 0.4f                 /* band level the tube holds at unity */
+#define FX_QUIET 1e-6f              /* below this for FX_QUIET_N samples = rest */
+#define FX_QUIET_N 256
+#define KT_REF 0.4f                 /* kick level the tube holds at unity */
 
 /* Antiderivative of hkh_tanh minus its value at 0:
  * d/dv [v^2/18 + 4/3 ln(1 + v^2/3)] = v/9 + 8v/(3v^2 + 9) = hkh_tanh(v). */
@@ -48,14 +49,12 @@ static float kt_F(float v) {
 }
 
 static void kt_rest(hkh_ktube *t) {
-    memset(&t->hp1, 0, sizeof(t->hp1)); memset(&t->hp2, 0, sizeof(t->hp2));
     memset(&t->lp1, 0, sizeof(t->lp1)); memset(&t->lp2, 0, sizeof(t->lp2));
     t->ay = t->au = t->dc_x = t->dc_y = 0.0f;
 }
 
 void hkh_ktube_init(hkh_ktube *t) {
     memset(t, 0, sizeof(*t));
-    hkh_svf_set(&t->hp_c, KT_XOVER_HZ, 0.70710678f);   /* x2 = LR4 */
     hkh_svf_set(&t->lp1_c, KT_BAND_HZ, 0.54119610f);   /* 4th-order Butterworth */
     hkh_svf_set(&t->lp2_c, KT_BAND_HZ, 1.30656296f);
     t->drv = 1.0f;
@@ -77,9 +76,9 @@ float hkh_ktube_tick(hkh_ktube *t, float x) {
     }
     t->sat += t->sat_step;
     if (t->sat < 0.0f) t->sat = 0.0f;
-    float y = hkh_svf_hp(&t->hp1, &t->hp_c, x);
-    y = hkh_svf_hp(&t->hp2, &t->hp_c, y);
-    y = hkh_svf_lp(&t->lp1, &t->lp1_c, y);
+    /* the WHOLE kick is bent -- the sub too, whose harmonics are what a
+     * small speaker hears; only what is above 6 kHz is left out (aliasing) */
+    float y = hkh_svf_lp(&t->lp1, &t->lp1_c, x);
     y = hkh_svf_lp(&t->lp2, &t->lp2_c, y);
     /* The ADAA step is taken in u = DRIVE * y alone and both ends are
      * evaluated at TODAY's asymmetry b: a moving SAT (b glides with it)
@@ -100,6 +99,11 @@ float hkh_ktube_tick(hkh_ktube *t, float x) {
     const float hp = KT_DC_COEF * (t->dc_y + diff - t->dc_x);
     t->dc_x = diff; t->dc_y = hp;
     if (!isfinite(hp)) { hkh_ktube_init(t); return x; }
+    /* Long silence: rest, so the -110 dB the filters still carry cannot
+     * keep the engine from its idle path (and its CPU saving) forever. */
+    if (fabsf(x) < FX_QUIET && fabsf(hp) < FX_QUIET) {
+        if (++t->quiet >= FX_QUIET_N) { kt_rest(t); return x; }
+    } else t->quiet = 0;
     return x + t->sat * hp;
 }
 
@@ -168,6 +172,14 @@ float hkh_harm_tick(hkh_harm *h, float x) {
     const float gen = bb * q + h->w3 * bb * (4.0f * q * q - 3.0f);
     const float hh = hkh_svf_hp(&h->hp, &h->hp_c, gen);
     if (!isfinite(hh)) { hkh_harm_init(h); return x; }
+    if (fabsf(x) < FX_QUIET && fabsf(hh) < FX_QUIET) {              /* see the tube */
+        if (++h->quiet >= FX_QUIET_N) {
+            memset(&h->src1, 0, sizeof(h->src1)); memset(&h->src2, 0, sizeof(h->src2));
+            memset(&h->bp, 0, sizeof(h->bp)); memset(&h->hp, 0, sizeof(h->hp));
+            h->p1 = h->p2 = 0.0f;
+            return x;
+        }
+    } else h->quiet = 0;
     return x + h->amt * hh;
 }
 

@@ -1,7 +1,7 @@
 /* Piston - the second knob page of each part (jog to page 2). MIT.
  *
- *   KICK FX   TUBE      kick only: tube saturation of what is ABOVE 120 Hz,
- *                       added to the untouched kick (the sub is never bent)
+ *   KICK FX   TUBE      kick only: tube saturation of the whole kick
+ *                       (sub included), its difference added to the kick
  *   HAT FX    HARMONICS hat only: harmonics generated from one band
  *                       (1.9 / 2.8 / 6.6 / 9.8 kHz) and added
  *   RACK FX   BUS COMP  the whole PISTON output (kick + hat + reverb + rack):
@@ -41,18 +41,21 @@ extern const hkh_fx_def hkh_fx_defs[FX_COUNT];
 float hkh_fx_clamp(int idx, float v);
 
 /* ---- KICK TUBE ------------------------------------------------------------
- * y = x + SAT * DCblock( f(DRIVE * yb) * N - yb ),  yb = x high-passed at
- * 120 Hz (LR4) and low-passed at 6 kHz (4th order). f is an asymmetric
- * rational tanh; N holds a band at 0.4 at its level, so louder parts are
- * squashed and quieter ones (body, tail) come up -- the thickening. Only the
- * DIFFERENCE is added, so the kick's sub passes untouched and in phase. First-order ADAA
+ * y = x + SAT * DCblock( f(DRIVE * yb) * N - yb ),  yb = x low-passed at
+ * 6 kHz (4th order). f is an asymmetric rational tanh; N holds a kick at 0.4
+ * at its level, so louder parts are squashed and quieter ones (body, tail)
+ * come up -- the thickening. The kick is its own voice here, so nothing is
+ * split off: the sub is bent too, and its harmonics are what a small speaker
+ * hears. Only the DIFFERENCE is added; the 6 kHz limit only keeps the
+ * curve's products under fs/2. First-order ADAA
  * keeps the curve's products from aliasing; no oversampling, no latency. */
 typedef struct {
     float sat, sat_step, drv, drv_step;     /* per-sample ramps */
-    hkh_svf_coef hp_c, lp1_c, lp2_c;
-    hkh_svf hp1, hp2, lp1, lp2;
+    hkh_svf_coef lp1_c, lp2_c;
+    hkh_svf lp1, lp2;
     float au, ay;                           /* ADAA memory: last DRIVE*y, last y */
     float dc_x, dc_y;
+    int quiet;                              /* samples of silence in and out */
 } hkh_ktube;
 void hkh_ktube_init(hkh_ktube *t);
 void hkh_ktube_block(hkh_ktube *t, float sat, float drive_db, int frames);
@@ -71,7 +74,7 @@ typedef struct {
     hkh_svf_coef src1_c, src2_c, bp_c, hp_c;
     hkh_svf src1, src2, bp, hp;
     float p1, p2;
-    int idle;
+    int idle, quiet;
 } hkh_harm;
 void hkh_harm_init(hkh_harm *h);
 void hkh_harm_block(hkh_harm *h, float amount, int freq_index, int frames);
