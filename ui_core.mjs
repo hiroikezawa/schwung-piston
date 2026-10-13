@@ -698,7 +698,7 @@ export function createUi(host) {
     }
 
     function onKnobTouch(knob, down) {
-        if (s.mode === MODE_RACK) return;
+        if (s.mode === MODE_RACK || knob === 7) return;     /* knob 8 turns pages */
         const now = host.now();
         if (down) {
             touched = knob;

@@ -77,7 +77,8 @@ typedef struct {
     /* The rack's sidechain: every fired kick ducks the whole rack bus (dry
      * and delay) by r_sc, recovering along sc_env. 0 = off. */
     float r_sc;                    /* depth as set, 0..1 */
-    float sc_env;                  /* 1 at a kick, decays to 0 */
+    float sc_env;                  /* 1 at a kick, falls to 0 over sc_len */
+    float sc_t, sc_len;            /* samples since the kick / pump length */
     float sc_gain;                 /* smoothed gain applied to the rack */
     float dly_fb, dly_wet;         /* smoothed feedback / return level */
     float dly_len, dly_len_target; /* samples, follows the tempo */

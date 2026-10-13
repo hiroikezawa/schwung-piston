@@ -82,7 +82,7 @@ static void voices_kick(hkh_engine *e, float vel) {
     hkh_akick_trigger(&e->voices.akick, e->k_model, vel, e->param[P_K_DECAY]);
     hkh_digital_trigger(&e->voices.dkick, kick_sample(e), vel);
     hkh_comp_trigger(&e->voices.kcomp);
-    e->sc_env = 1.0f;                       /* the rack's sidechain key */
+    e->sc_t = 0.0f;                         /* the rack's sidechain key */
 }
 static void voices_hat(hkh_engine *e, float vel, float decay, int follows_base) {
     hkh_hat_trigger(&e->voices.hat, e->h_model, vel, decay, follows_base);
@@ -130,11 +130,17 @@ static int rack_active(const hkh_engine *e) {
 
 /* FB 100% keeps 0.95 of each repeat (-0.45 dB a pass): long, never runaway. */
 #define RACK_FB_MAX 0.95f
-/* Sidechain: the duck comes in over ~2 ms (no click) and the release is an
- * exponential with an 80 ms time constant -- back by about an eighth note
- * at 120 BPM. */
-#define SC_DECAY 0.99971660f          /* exp(-1 / (0.080 * 44100)) */
+/* Sidechain: a tempo-synced PUMP. The duck comes in over ~2 ms (no click)
+ * and swells back along (1 - t)^2 over three sixteenths, so everything the
+ * rack plays between kicks breathes with them -- not only what lands on the
+ * kick. Applied AFTER the rack's soft clip, which would otherwise give back
+ * part of what was taken. */
 #define SC_SMOOTH 0.0113f             /* ~2 ms one-pole on the gain */
+static float sc_duck(const hkh_engine *e) {
+    if (e->sc_len <= 0.0f || e->sc_t >= e->sc_len) return 0.0f;
+    float x = 1.0f - e->sc_t / e->sc_len;
+    return x * x;
+}
 
 /* The rack delay: a dotted eighth (3/4 beat), mono. The repeats are copies,
  * not darkened: there is no filter in the feedback, and once the length has
@@ -208,10 +214,11 @@ static void voices_tick(hkh_engine *e, float *l, float *r) {
         rs += x * rv->vel * e->r_gain[i];
     }
     rs = rack_delay_tick(e, rs);
-    e->sc_env *= SC_DECAY;
+    if (rs != 0.0f) rs = hkh_tanh(rs * (1.0f / RACK_CEILING)) * RACK_CEILING;
+    if (e->sc_t < e->sc_len) e->sc_t += 1.0f;
+    e->sc_env = sc_duck(e);
     e->sc_gain += (1.0f - e->r_sc * e->sc_env - e->sc_gain) * SC_SMOOTH;
     rs *= e->sc_gain;
-    if (rs != 0.0f) rs = hkh_tanh(rs * (1.0f / RACK_CEILING)) * RACK_CEILING;
     float outl = kb + h + rl + rs, outr = kb + h + rr + rs;
     hkh_limiter_tick(&v->limiter, &outl, &outr);
     *l = outl;
@@ -223,6 +230,7 @@ void hkh_engine_init(hkh_engine *e, uint32_t seed) {
     memset(e, 0, sizeof(*e));
     e->dly_quiet = HKH_DELAY_MAX + 1;
     e->sc_gain = 1.0f;
+    e->sc_t = e->sc_len = 1.0f;
     for (int i = 0; i < P_COUNT; ++i) e->param[i] = hkh_param_defaults[i];
     e->k_model = KICK_909;
     e->k_sample = 0;
@@ -517,6 +525,7 @@ void hkh_engine_render(hkh_engine *e, float *out_l, float *out_r, int frames,
     {   /* the rack delay follows the tempo: a dotted eighth = 3/4 beat */
         float b = (bpm >= 20.0f && bpm <= 999.0f) ? bpm : 120.0f;
         e->dly_len_target = roundf(0.75f * 60.0f / b * HKH_SR);   /* whole samples */
+        e->sc_len = 0.75f * 60.0f / b * HKH_SR;                    /* the pump: 3/16 */
         if (e->dly_len <= 0.0f) e->dly_len = e->dly_len_target;
     }
     if (!out_l || !out_r || frames <= 0) return;
@@ -557,7 +566,8 @@ void hkh_engine_render(hkh_engine *e, float *out_l, float *out_r, int frames,
         v->ksend += v->ksend_step * (float)frames;
         v->hsend += v->hsend_step * (float)frames;
         v->rumble_meter *= 0.994f;
-        e->sc_env *= powf(SC_DECAY, (float)frames);
+        e->sc_t = fminf(e->sc_t + (float)frames, e->sc_len);
+        e->sc_env = sc_duck(e);
         e->sc_gain = 1.0f - e->r_sc * e->sc_env;
         memset(out_l, 0, (size_t)frames * sizeof(float));
         memset(out_r, 0, (size_t)frames * sizeof(float));

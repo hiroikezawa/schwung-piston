@@ -920,6 +920,7 @@ static void test_rack_sidechain(void) {
     float duck = sc_level(1.0f, 0, 3, 12);
     float half = sc_level(0.5f, 0, 3, 12);
     float back = sc_level(1.0f, 0, 400, 480);
+    float mid = sc_level(1.0f, 0, 120, 160);           /* an eighth later: still down */
     float muted = sc_level(1.0f, 1, 3, 12);
     printf("  sidechain: before %.3f | 3-12 ms after a kick: off %.3f, 50%% %.3f, 100%% %.3f | 400 ms %.3f | kick muted %.3f\n",
            before, off, half, duck, back, muted);
@@ -928,6 +929,8 @@ static void test_rack_sidechain(void) {
     assert(duck < 0.25f * before);                      /* 100% = deep */
     assert(half > duck && half < 0.8f * before);        /* depth scales */
     assert(back > 0.9f * before);                       /* it comes back */
+    printf("  sidechain mid (120-160 ms) %.3f\n", mid);
+    assert(mid < 0.75f * before && mid > duck);         /* a pump, not a blip */
     assert(fabsf(muted - before) < 0.02f * before);     /* no kick, no duck */
 
     /* FB 100%: every repeat a little quieter than the one before. */
