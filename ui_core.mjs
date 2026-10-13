@@ -452,7 +452,9 @@ export function createUi(host) {
         selHeld.analog = selHeld.digital = selHeld.model = false;
         updateSel();
         ui.rackHeld = -1;
-        const next = (s.mode + (dir < 0 ? MODES - 1 : 1)) % MODES;
+        /* KICK | HAT | RACK in a line: the ends stop, nothing wraps. */
+        const next = Math.min(MODES - 1, Math.max(0, s.mode + (dir < 0 ? -1 : 1)));
+        if (next === s.mode) return;
         set("mode", next);
         s.mode = next;
     }
@@ -642,6 +644,8 @@ export function createUi(host) {
             if (now - lastPageTurn >= PAGE_TURN_MS || Math.sign(d) !== Math.sign(pageAcc)) pageAcc = 0;
             lastPageTurn = now;
             pageAcc += d;
+            const atEnd = (pageAcc > 0 && s.mode === MODES - 1) || (pageAcc < 0 && s.mode === 0);
+            if (atEnd) { pageAcc = 0; return; }       /* no winding up past an end */
             while (Math.abs(pageAcc) >= PAGE_TICKS) {
                 nextMode(pageAcc > 0 ? 1 : -1);
                 pageAcc -= Math.sign(pageAcc) * PAGE_TICKS;
