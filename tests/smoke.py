@@ -258,6 +258,23 @@ q2 = create(b".", None)
 write("state", read("state", inst=pr), inst=q2)
 assert ui_state(q2)[51] == 1 << 5, "rack mutes are saved"
 destroy(q2)
+# kick / hat mutes are saved with the set (0.7.1); an old state restores unmuted
+write("k_mute", 1, inst=pr)
+doc = json.loads(read("state", inst=pr))
+assert doc["kmu"] == 1 and doc["hmu"] == 0
+q3 = create(b".", None)
+write("h_mute", 1, inst=q3)
+write("state", read("state", inst=pr), inst=q3)
+assert ui_state(q3)[7] == 1 and ui_state(q3)[8] == 0, "kick/hat mutes are saved"
+old_doc = dict(doc); del old_doc["kmu"]; del old_doc["hmu"]
+write("state", json.dumps(old_doc), inst=q3)
+assert ui_state(q3)[7] == 0 and ui_state(q3)[8] == 0, "old state restores unmuted"
+before3 = read("state", inst=q3)
+for bad in ('"kmu":2', '"kmu":0.5', '"hmu":-1'):
+    write("state", json.dumps(doc).replace('"kmu": 1', bad.replace(':', ': ')) if 'kmu' in bad else json.dumps(doc).replace('"hmu": 0', bad.replace(':', ': ')), inst=q3)
+    assert read("state", inst=q3) == before3, bad
+destroy(q3)
+write("k_mute", 0, inst=pr)
 write("r_fb", "nan", inst=pr)
 assert ui_state(pr)[116] == 400
 write("r_sc", "0.6", inst=pr)

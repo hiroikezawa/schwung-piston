@@ -19,7 +19,7 @@ _Static_assert(ATOMIC_INT_LOCK_FREE == 2, "instance pool needs lock-free atomics
 
 /* Four chain slots can each hold one; two spare cover a swap in flight. */
 #define HKH_INSTANCES 6
-#define HKH_DSP_BUILD 700          /* major*10000 + minor*100 + patch: 0.7.0; bump with module.json */
+#define HKH_DSP_BUILD 701          /* major*10000 + minor*100 + patch: 0.7.1; bump with module.json */
 
 /* The shim parks a slot whose output stays below 5 LSB for ~1 s and renders
  * it only once every ~0.5 s after that (schwung_shim.c, DSP_IDLE_THRESHOLD).
@@ -151,7 +151,8 @@ static int parse_int(const char *s, int lo, int hi, int *out) {
  * Parsed into a scratch copy and applied only if every field is valid, so a
  * truncated or foreign blob can never leave the instance half-restored. The
  * chain host hands this back compacted, but pretty-printed input is accepted.
- * Mute, FILL and motion-record are performance gestures and are not saved. */
+ * Kick/hat mute ("kmu"/"hmu") is saved since 0.7.1, like the rack mutes;
+ * FILL and motion-record are performance gestures and are not saved. */
 #define HKH_STATE_MAX 8192
 
 static const char *find_key(const char *s, const char *key) {
@@ -251,6 +252,10 @@ static int restore_state(hkh_engine *e, const char *text) {
         for (int i = 0; i < HKH_RACK; ++i)
             if (!in_int_range(rp[i], 0, 65535) || rv[i] < 0.0f || rv[i] > 1.0f) return 0;
     }
+    /* Kick and hat mutes, since 0.7.1; an older state restores unmuted. */
+    float kmu = 0.0f, hmu = 0.0f;
+    if (find_key(p, "kmu") && (!read_key_number(p, "kmu", &kmu) || !in_int_range(kmu, 0, 1))) return 0;
+    if (find_key(p, "hmu") && (!read_key_number(p, "hmu", &hmu) || !in_int_range(hmu, 0, 1))) return 0;
     /* All valid: apply. */
     e->mode = (int)mode;
     e->k_model = (int)km;
@@ -283,6 +288,8 @@ static int restore_state(hkh_engine *e, const char *text) {
         if (rm > 0xFFFFFFFFul || (*end != ',' && *end != '}' && !isspace((unsigned char)*end))) return 0;
     }
     for (int i = 0; i < HKH_RACK; ++i) hkh_engine_rack_set_mute(e, i, (int)((rm >> i) & 1u));
+    hkh_engine_set_mute(e, 0, (int)kmu);
+    hkh_engine_set_mute(e, 1, (int)hmu);
     for (int i = 0; has_rack && i < HKH_RACK; ++i) {
         e->r_pattern[i] = (uint16_t)rp[i];
         e->r_vol[i] = rv[i];
@@ -496,7 +503,7 @@ static int write_state(const hkh_engine *e, char *buf, int size) {
     if (n > 0 && n < size) n += snprintf(buf + n, size - n, "],\"rv\":[");
     for (int i = 0; i < HKH_RACK && n > 0 && n < size; ++i)
         n += snprintf(buf + n, size - n, "%s%.4f", i ? "," : "", e->r_vol[i]);
-    if (n > 0 && n < size) n += snprintf(buf + n, size - n, "],\"rf\":%.4f,\"rsc\":%.4f,\"rm\":%u,\"fx\":[", e->r_fb, e->r_sc, rack_mute_mask(e));
+    if (n > 0 && n < size) n += snprintf(buf + n, size - n, "],\"rf\":%.4f,\"rsc\":%.4f,\"rm\":%u,\"kmu\":%d,\"hmu\":%d,\"fx\":[", e->r_fb, e->r_sc, rack_mute_mask(e), e->k_mute, e->h_mute);
     for (int i = 0; i < FX_COUNT && n > 0 && n < size; ++i)
         n += snprintf(buf + n, size - n, "%s%.4f", i ? "," : "", e->fx[i]);
     if (n > 0 && n < size) n += snprintf(buf + n, size - n, "]}");
