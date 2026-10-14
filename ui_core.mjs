@@ -180,9 +180,19 @@ export const C = {
     RACK_MUTED: 66,                 /* VeryDarkRed */
 };
 
-/* A held rack pad's knobs 1-5: its volume and its four sends. */
-const RACK_PAD_KEYS = ["r_vol", "r_dsend", "r_rsend", "r_csend", "r_msend"];
-const RACK_PAD_NAMES = ["VOL", "DLY", "REV", "CRS", "RNG"];
+/* A held rack pad's knobs 1-6: its volume, its four sends and its LPF. */
+const RACK_PAD_KEYS = ["r_vol", "r_dsend", "r_rsend", "r_csend", "r_msend", "r_lpf"];
+const RACK_PAD_NAMES = ["VOL", "DLY", "REV", "CRS", "RNG", "LPF"];
+
+/* The LPF knob's cutoff (as dsp/hkh_engine.c hkh_rack_lpf_hz), shortened to
+ * three characters for its column: "-" open, "800", "2k4", "12k". */
+export function lpfLabel(v) {
+    if (v >= 1) return "-";
+    const hz = 80 * Math.pow((0.45 * 44100) / 80, Math.max(0, v));
+    if (hz < 1000) return String(Math.round(hz));
+    if (hz < 10000) { const t = Math.round(hz / 100); return `${Math.floor(t / 10)}k${t % 10}`; }
+    return `${Math.round(hz / 1000)}k`;
+}
 
 /* ---- ui_state ------------------------------------------------------------ */
 
@@ -190,7 +200,8 @@ const RACK_PAD_NAMES = ["VOL", "DLY", "REV", "CRS", "RNG"];
 export const UI_STATE_FIELDS = 18 + 14 + 16 + 2 + 2 + 32 + 32 + 1 + 1   // + the rack sidechain (0.6.3)
     + 11 + 2                                                             // + page-2 effects, GR, PUNCH limit (0.7.0)
     + 32 + 32                                                            // + rack DLY / REV sends (0.8.0)
-    + 32 + 32;                                                           // + rack CRUSH / RING sends (0.8.1)
+    + 32 + 32                                                            // + rack CRUSH / RING sends (0.8.1)
+    + 32;                                                                // + rack LPF (0.8.2)
 
 export function parseUiState(text) {
     if (typeof text !== "string" || text.length === 0) return null;
@@ -219,6 +230,7 @@ export function parseUiState(text) {
         bcGr: n[129] / 10, bcLim: n[130] === 1,
         rds: n.slice(131, 163).map((x) => x / 1000), rrs: n.slice(163, 195).map((x) => x / 1000),
         rcs: n.slice(195, 227).map((x) => x / 1000), rms: n.slice(227, 259).map((x) => x / 1000),
+        rlp: n.slice(259, 291).map((x) => x / 1000),
     };
 }
 
@@ -228,7 +240,7 @@ export function defaultState() {
         Array(16).fill(-1).join(",") + ",0,0,0,0," +
         Array(32).fill(0).join(",") + "," + Array(32).fill(800).join(",") + ",0,0," +
         FX_KEYS.map((k) => Math.round(FX_DEFS[k].def * 10)).join(",") + ",0,0," +
-        Array(32).fill(1000).join(",") + "," + Array(96).fill(0).join(","));
+        Array(32).fill(1000).join(",") + "," + Array(96).fill(0).join(",") + "," + Array(32).fill(1000).join(","));
 }
 
 /* ---- LEDs (pure) --------------------------------------------------------- */
@@ -426,7 +438,7 @@ export function createUi(host) {
 
     function flushPending() {
         for (const [key, value] of pending) {
-            const rk = /^(r_vol|r_dsend|r_rsend|r_csend|r_msend):(\d+)$/.exec(key);
+            const rk = /^(r_vol|r_dsend|r_rsend|r_csend|r_msend|r_lpf):(\d+)$/.exec(key);
             if (rk) set(rk[1], `${rk[2]}:${value.toFixed(4)}`);
             else set(key, value.toFixed(4));
         }
@@ -719,8 +731,9 @@ export function createUi(host) {
                 say(s.rfb > 0 ? `DELAY FB ${Math.round(s.rfb * 100)}%` : "DELAY OFF");
                 return;
             }
-            if (knob === 5 && d !== 0) {
-                /* Knob 6: the rack sidechain -- how far each kick ducks it. */
+            if (knob === 5 && d !== 0 && pad < 0) {
+                /* Knob 6: the rack sidechain -- how far each kick ducks it
+                 * (while a pad is held, knob 6 is that pad's LPF). */
                 const now = host.now();
                 const step = knobStep(now - lastTurn[knob]);
                 lastTurn[knob] = now;
@@ -730,9 +743,9 @@ export function createUi(host) {
                 return;
             }
             /* Hold a rack pad: knob 1 = its volume, 2-5 = its DLY, REV,
-             * CRUSH and RING sends. */
+             * CRUSH and RING sends, 6 = its LPF. */
             if (pad < 0 || d === 0) return;
-            const arr = [s.rv, s.rds, s.rrs, s.rcs, s.rms][knob];
+            const arr = [s.rv, s.rds, s.rrs, s.rcs, s.rms, s.rlp][knob];
             if (!arr) return;
             const now = host.now();
             const step = knobStep(now - lastTurn[knob]);
@@ -1033,14 +1046,15 @@ export function createUi(host) {
             if ((p >> i) & 1) g.fillRect(x, y, 11, 6, 1); else g.drawRect(x, y, 11, 6, 1);
             if (s.running && s.step === i) g.fillRect(x, y + 7, 11, 1, 1);
         }
-        /* knobs 1-5: VOL and the four sends, each a name, value and bar */
-        const vals = [s.rv[held], s.rds[held], s.rrs[held], s.rcs[held], s.rms[held]];
+        /* knobs 1-6: VOL, the four sends and the LPF: name, value, bar */
+        const vals = [s.rv[held], s.rds[held], s.rrs[held], s.rcs[held], s.rms[held], s.rlp[held]];
         vals.forEach((v, k) => {
-            const x = k * 26, name = RACK_PAD_NAMES[k], num = String(Math.round(v * 100));
-            g.print(x + Math.floor((24 - tw(name)) / 2), 40, name, 1);
-            g.print(x + Math.floor((24 - tw(num)) / 2), 49, num, 1);
-            g.drawRect(x, 58, 24, 5, 1);
-            g.fillRect(x + 1, 59, Math.round(22 * v), 3, 1);
+            const x = k * 21, name = RACK_PAD_NAMES[k];
+            const num = k === 5 ? lpfLabel(v) : String(Math.round(v * 100));
+            g.print(x + Math.floor((20 - tw(name)) / 2), 40, name, 1);
+            g.print(x + Math.floor((20 - tw(num)) / 2), 49, num, 1);
+            g.drawRect(x, 58, 20, 5, 1);
+            g.fillRect(x + 1, 59, Math.round(18 * v), 3, 1);
         });
     }
 

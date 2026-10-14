@@ -1208,6 +1208,34 @@ static void test_rack_sends(void) {
     fflush(stdout);
     assert(crush_db > 30.0 && ring_db > 30.0);
     printf("PASS: rack CRUSH (sample-rate reducer) and RING (ring modulator) sends\n");
+
+    /* LPF: a 4 kHz tone through pad 1's filter. Open = the tone untouched;
+     * half way (~1.3 kHz) it is well down; closed (80 Hz) nearly gone. The
+     * delay is fed AFTER the filter (it is an insert before the sends). */
+    for (int i = 0; i < TONE_LEN; ++i) TONE[i] = (int16_t)(12000.0 * sin(2 * M_PI * 4000.0 * i / 44100.0));
+    const float lpv[3] = {1.0f, 0.5f, 0.0f};
+    float lvl[3];
+    for (int k = 0; k < 3; ++k) {
+        hkh_engine_init(&g, 18);
+        hkh_engine_set_rack_source(&g, rack_tone, NULL);
+        g.k_pattern = 0;
+        g.h_pattern = 0;
+        g.r_pattern[0] = 1;
+        hkh_engine_rack_set_fb(&g, 0.0f);
+        hkh_engine_rack_set_lpf(&g, 0, lpv[k]);
+        transport stopped = {0.0, 120.0f, 0};
+        run(&g, &stopped, 64);
+        transport t3 = {0.0, 120.0f, 1};
+        lvl[k] = 0.0f;
+        for (int b = 0; b < 80; ++b) {
+            render(&g, &t3);
+            if (b >= 20) for (int i = 0; i < BLOCK; ++i) lvl[k] = fmaxf(lvl[k], fabsf(L[i]));
+        }
+    }
+    printf("  LPF on a 4 kHz tone: open %.3f, half %.3f, closed %.5f\n", lvl[0], lvl[1], lvl[2]);
+    fflush(stdout);
+    assert(lvl[1] < 0.25f * lvl[0] && lvl[2] < 0.001f * lvl[0] + 1e-5f);
+    printf("PASS: rack per-pad LPF\n");
 }
 
 /* RUMBLE and REVERB at maximum cannot run away: the tail dies. */

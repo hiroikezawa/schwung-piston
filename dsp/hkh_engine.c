@@ -54,6 +54,12 @@ static float rack_send_gain(float v) { return v * v; }
 /* CRUSH: hold every 8th sample (44.1 kHz -> 5.5 kHz), no smoothing -- the
  * aliasing IS the effect. RING: the send times a 500 Hz sine. Both are
  * returned at unity, in parallel with the dry, like the delay and reverb. */
+/* LPF: exponential from 80 Hz to the top of the band; 1 bypasses it. */
+#define RACK_LPF_LO 80.0f
+float hkh_rack_lpf_hz(float v) {
+    const float hi = 0.45f * HKH_SR;
+    return RACK_LPF_LO * powf(hi / RACK_LPF_LO, hkh_clamp(v, 0.0f, 1.0f));
+}
 #define RACK_CRUSH_FACTOR 8
 #define RACK_RING_W (6.2831853f * 500.0f / 44100.0f)
 #define RACK_CEILING 0.9f
@@ -228,6 +234,7 @@ static void voices_tick(hkh_engine *e, float *l, float *r) {
         int left = rv->len - rv->pos;
         if (left < 88) x *= (float)left * (1.0f / 88.0f);
         x = x * rv->vel * e->r_gain[i];
+        if (e->r_lpf_s[i] < 1.0f) x = hkh_svf_lp(&e->r_svf[i], &e->r_svfc[i], x);
         rs += x;
         ds += x * e->r_dgain[i];
         vs += x * e->r_rgain[i];
@@ -277,6 +284,7 @@ void hkh_engine_init(hkh_engine *e, uint32_t seed) {
     for (int i = 0; i < HKH_RACK; ++i) {
         e->r_vol[i] = HKH_RACK_DEFAULT_VOL;
         e->r_gain[i] = rack_vol_gain(HKH_RACK_DEFAULT_VOL);
+        e->r_lpf[i] = e->r_lpf_s[i] = 1.0f;
         e->r_dsend[i] = RACK_DSEND_DEFAULT;
         e->r_dgain[i] = rack_send_gain(RACK_DSEND_DEFAULT);
         e->r_rsend[i] = RACK_RSEND_DEFAULT;
@@ -355,6 +363,11 @@ void hkh_engine_rack_set_send(hkh_engine *e, int pad, int which, float v) {
     else if (which == 1) e->r_rsend[pad] = v;
     else if (which == 2) e->r_csend[pad] = v;
     else if (which == 3) e->r_msend[pad] = v;
+}
+
+void hkh_engine_rack_set_lpf(hkh_engine *e, int pad, float v) {
+    if (pad < 0 || pad >= HKH_RACK || !isfinite(v)) return;
+    e->r_lpf[pad] = hkh_clamp(v, 0.0f, 1.0f);
 }
 
 void hkh_engine_set_param(hkh_engine *e, int index, float value) {
@@ -619,6 +632,16 @@ void hkh_engine_render(hkh_engine *e, float *out_l, float *out_r, int frames,
         e->r_mgain[i] += (mt - e->r_mgain[i]) * BLOCK_SMOOTH;
         if (fabsf(ct - e->r_cgain[i]) < 1e-4f) e->r_cgain[i] = ct;
         if (fabsf(mt - e->r_mgain[i]) < 1e-4f) e->r_mgain[i] = mt;
+        /* the LPF glides in knob space and lands exactly; fully open it is
+         * not run at all (so the default is the unfiltered pad, bit for bit) */
+        float was = e->r_lpf_s[i];
+        e->r_lpf_s[i] += (e->r_lpf[i] - e->r_lpf_s[i]) * BLOCK_SMOOTH;
+        if (fabsf(e->r_lpf[i] - e->r_lpf_s[i]) < 1e-4f) e->r_lpf_s[i] = e->r_lpf[i];
+        if (e->r_lpf_s[i] < 1.0f) {
+            if (was >= 1.0f) e->r_svf[i].ic1 = e->r_svf[i].ic2 = 0.0f;
+            hkh_svf_sanitize(&e->r_svf[i]);
+            hkh_svf_set(&e->r_svfc[i], hkh_rack_lpf_hz(e->r_lpf_s[i]), 0.7071f);
+        }
     }
 
     /* Idle fast path: nothing is sounding and nothing will start this block

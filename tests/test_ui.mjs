@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import {
+    lpfLabel,
     createUi, padAt, noteAt, computeLeds, parseUiState, defaultState, knobStep, C,
     MODE_HAT, MODE_RACK, PARAM_KEYS, stepPad, padStep, PRESET_FILE, parsePresets,
     rackPadAt, rackStepPad, rackPadStep, PAGE_TICKS, FX_KEYS, FX_DEFS,
@@ -17,7 +18,7 @@ function mockDsp() {
             [k, [0.8, 0.25, 0.5, 0.15, 0.25, 0, 0, 0.7, 0.5, 0, 0.1, 0.2, 0.5, 0][i]])),
         motion: new Array(16).fill(-1),
         rackMask: 0xFFFFFFFF & ~(1 << 4), rackMute: 0, rp: new Array(32).fill(0), rv: new Array(32).fill(0.8), rfb: 0, rsc: 0,
-        rds: new Array(32).fill(1), rrs: new Array(32).fill(0), rcs: new Array(32).fill(0), rms: new Array(32).fill(0),
+        rds: new Array(32).fill(1), rrs: new Array(32).fill(0), rcs: new Array(32).fill(0), rms: new Array(32).fill(0), rlp: new Array(32).fill(1),
         fx: Object.fromEntries(FX_KEYS.map((k) => [k, FX_DEFS[k].def])), gr: 0, lim: 0,
     };
     d.set = (key, value) => {
@@ -51,6 +52,7 @@ function mockDsp() {
         case "r_rsend": { const [a, b] = String(value).split(":").map(Number); d.rrs[a] = b; break; }
         case "r_csend": { const [a, b] = String(value).split(":").map(Number); d.rcs[a] = b; break; }
         case "r_msend": { const [a, b] = String(value).split(":").map(Number); d.rms[a] = b; break; }
+        case "r_lpf": { const [a, b] = String(value).split(":").map(Number); d.rlp[a] = b; break; }
         default: break;
         }
     };
@@ -61,7 +63,8 @@ function mockDsp() {
         d.rackMask, d.rackMute, ...d.rp, ...d.rv.map((x) => Math.round(x * 1000)), Math.round(d.rfb * 1000), Math.round(d.rsc * 1000),
         ...FX_KEYS.map((k) => Math.round(d.fx[k] * 10)), Math.round(d.gr * 10), d.lim,
         ...d.rds.map((x) => Math.round(x * 1000)), ...d.rrs.map((x) => Math.round(x * 1000)),
-        ...d.rcs.map((x) => Math.round(x * 1000)), ...d.rms.map((x) => Math.round(x * 1000))].join(",");
+        ...d.rcs.map((x) => Math.round(x * 1000)), ...d.rms.map((x) => Math.round(x * 1000)),
+        ...d.rlp.map((x) => Math.round(x * 1000))].join(",");
     return d;
 }
 
@@ -479,8 +482,17 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
     r.tick();
     assert(r.sets.some(([k, v]) => k === "r_csend" && v.startsWith("1:0.") && Number(v.slice(2)) > 0), JSON.stringify(r.sets));
     assert(r.sets.some(([k, v]) => k === "r_msend" && v.startsWith("1:0.") && Number(v.slice(2)) > 0), JSON.stringify(r.sets));
+    const scBefore = r.dsp.rsc;
+    r.turn(5, -40);                               /* knob 6 while held: its LPF, not SIDECHAIN */
+    r.tick();
+    assert(r.sets.some(([k, v]) => k === "r_lpf" && v.startsWith("1:0.")), JSON.stringify(r.sets));
+    assert.equal(r.dsp.rsc, scBefore, "SIDECHAIN untouched while a pad is held");
     assert.equal(r.dsp.rds[0], 1, "other pads keep their sends");
-    assert(["VOL", "DLY", "REV", "CRS", "RNG"].every((n) => r.printed.includes(n)), "held pad shows its five knobs");
+    assert(["VOL", "DLY", "REV", "CRS", "RNG", "LPF"].every((n) => r.printed.includes(n)), "held pad shows its six knobs");
+    assert.equal(lpfLabel(1), "-");
+    assert.equal(lpfLabel(0), "80");
+    assert(/^\d+k\d$|^\d+k$|^\d+$/.test(lpfLabel(0.5)) && lpfLabel(0.5).length <= 3, lpfLabel(0.5));
+    assert.equal(lpfLabel(0.999).length <= 3, true);
     assert(!r.sets.some(([k]) => k === "r_step" && r.sets.filter((x) => x[0] === "r_step").length > 1));
     assert.equal(r.leds[noteAt(2, 3)], C.RACK_STEP);
     r.release(noteAt(0, 1));

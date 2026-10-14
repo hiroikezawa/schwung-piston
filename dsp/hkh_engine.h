@@ -83,6 +83,11 @@ typedef struct {
      * (a ring modulator). Both fixed effects, returned beside the dry. */
     float r_csend[HKH_RACK], r_msend[HKH_RACK];
     float r_cgain[HKH_RACK], r_mgain[HKH_RACK];
+    /* Per-pad LPF, an insert BEFORE the sends: 12 dB/oct, no resonance.
+     * 0..1 as set (1 = open = no filter at all, the default), smoothed. */
+    float r_lpf[HKH_RACK], r_lpf_s[HKH_RACK];
+    hkh_svf r_svf[HKH_RACK];
+    hkh_svf_coef r_svfc[HKH_RACK];
     float crush_hold;              /* the reducer's held sample */
     int crush_n;                   /* samples until the next one is taken */
     float ring_s, ring_c;          /* the ring carrier (sin / cos) */
@@ -122,6 +127,10 @@ void hkh_engine_rack_set_mute(hkh_engine *e, int pad, int on);
 void hkh_engine_rack_set_vol(hkh_engine *e, int pad, float vol);
 /* which = 0: DLY, 1: REV, 2: CRUSH, 3: RING send; 0..1 */
 void hkh_engine_rack_set_send(hkh_engine *e, int pad, int which, float v);
+/* 0..1: 0 = 80 Hz, 1 = open (no filter) */
+void hkh_engine_rack_set_lpf(hkh_engine *e, int pad, float v);
+/* The cutoff a knob value means, in Hz (open counts as 0.45 x SR). */
+float hkh_rack_lpf_hz(float v);
 void hkh_engine_rack_trigger(hkh_engine *e, int pad);
 void hkh_engine_rack_set_fb(hkh_engine *e, float fb);
 void hkh_engine_rack_set_sc(hkh_engine *e, float depth);

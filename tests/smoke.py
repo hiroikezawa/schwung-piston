@@ -81,7 +81,7 @@ def block(inst=None):
 
 def ui_state(inst=None):
     f = read("ui_state", inst=inst).split(",")
-    assert f[0] == "3" and len(f) == 18 + 14 + 16 + 2 + 2 + 64 + 2 + 11 + 2 + 64 + 64, f  # ... rack FB, sidechain, page-2 FX, GR, PUNCH limit, rack sends
+    assert f[0] == "3" and len(f) == 18 + 14 + 16 + 2 + 2 + 64 + 2 + 11 + 2 + 64 + 64 + 32, f  # ... rack FB, sidechain, page-2 FX, GR, PUNCH limit, rack sends, rack LPF
     return [int(x) for x in f]
 
 
@@ -319,6 +319,21 @@ assert ui_state(q5)[195:259] == [0] * 64, "old state: CRUSH / RING off"
 destroy(q5)
 write("r_csend", "6:0", inst=pr)
 write("r_msend", "7:0", inst=pr)
+# per-pad LPF (0.8.2): ui_state 259-290, saved as rlp, absent = open
+assert ui_state(pr)[259:291] == [1000] * 32
+write("r_lpf", "9:0.3", inst=pr)
+write("r_lpf", "9:nan", inst=pr)
+assert ui_state(pr)[259 + 9] == 300
+doc = json.loads(read("state", inst=pr))
+assert abs(doc["rlp"][9] - 0.3) < 1e-4
+q6 = create(b".", None)
+write("state", read("state", inst=pr), inst=q6)
+assert ui_state(q6)[259 + 9] == 300, "LPF is saved"
+old_doc = dict(doc); del old_doc["rlp"]
+write("state", json.dumps(old_doc), inst=q6)
+assert ui_state(q6)[259:291] == [1000] * 32, "old state: LPF open"
+destroy(q6)
+write("r_lpf", "9:1", inst=pr)
 write("r_fb", "nan", inst=pr)
 assert ui_state(pr)[116] == 400
 write("r_sc", "0.6", inst=pr)

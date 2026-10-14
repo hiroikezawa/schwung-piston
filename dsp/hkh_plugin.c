@@ -19,7 +19,7 @@ _Static_assert(ATOMIC_INT_LOCK_FREE == 2, "instance pool needs lock-free atomics
 
 /* Four chain slots can each hold one; two spare cover a swap in flight. */
 #define HKH_INSTANCES 6
-#define HKH_DSP_BUILD 801          /* major*10000 + minor*100 + patch: 0.8.1; bump with module.json */
+#define HKH_DSP_BUILD 802          /* major*10000 + minor*100 + patch: 0.8.2; bump with module.json */
 
 /* The shim parks a slot whose output stays below 5 LSB for ~1 s and renders
  * it only once every ~0.5 s after that (schwung_shim.c, DSP_IDLE_THRESHOLD).
@@ -265,6 +265,14 @@ static int restore_state(hkh_engine *e, const char *text) {
             if (!(sends[k][i] >= 0.0f && sends[k][i] <= 1.0f)) return 0;
         }
     }
+    /* Per-pad LPF, since 0.8.2; absent = open. */
+    float rlp[HKH_RACK];
+    int has_rlp = find_key(p, "rlp") != NULL;
+    if (has_rlp && !read_key_array(p, "rlp", rlp, HKH_RACK)) return 0;
+    for (int i = 0; i < HKH_RACK; ++i) {
+        if (!has_rlp) rlp[i] = 1.0f;
+        if (!(rlp[i] >= 0.0f && rlp[i] <= 1.0f)) return 0;
+    }
     /* Kick and hat mutes, since 0.7.1; an older state restores unmuted. */
     float kmu = 0.0f, hmu = 0.0f;
     if (find_key(p, "kmu") && (!read_key_number(p, "kmu", &kmu) || !in_int_range(kmu, 0, 1))) return 0;
@@ -305,6 +313,7 @@ static int restore_state(hkh_engine *e, const char *text) {
     hkh_engine_set_mute(e, 1, (int)hmu);
     for (int k = 0; k < 4; ++k)
         for (int i = 0; i < HKH_RACK; ++i) hkh_engine_rack_set_send(e, i, k, sends[k][i]);
+    for (int i = 0; i < HKH_RACK; ++i) hkh_engine_rack_set_lpf(e, i, rlp[i]);
     for (int i = 0; has_rack && i < HKH_RACK; ++i) {
         e->r_pattern[i] = (uint16_t)rp[i];
         e->r_vol[i] = rv[i];
@@ -408,6 +417,7 @@ static void set_param(void *ptr, const char *key, const char *val) {
         else if (!strcmp(key, "r_rsend")) hkh_engine_rack_set_send(e, pad, 1, f);
         else if (!strcmp(key, "r_csend")) hkh_engine_rack_set_send(e, pad, 2, f);
         else if (!strcmp(key, "r_msend")) hkh_engine_rack_set_send(e, pad, 3, f);
+        else if (!strcmp(key, "r_lpf")) hkh_engine_rack_set_lpf(e, pad, f);
         else if (!strcmp(key, "r_pattern")) { if (in_int_range(f, 0, 65535)) e->r_pattern[pad] = (uint16_t)f; }
         return;
     }
@@ -501,6 +511,9 @@ static int write_ui_state(hkh_instance *inst, char *buf, int size) {
     for (int k = 0; k < 4; ++k)
         for (int i = 0; i < HKH_RACK && n > 0 && n < size; ++i)
             n += snprintf(buf + n, size - n, ",%d", milli(sends[k][i]));
+    /* 259-290: rack LPF (0.8.2) */
+    for (int i = 0; i < HKH_RACK && n > 0 && n < size; ++i)
+        n += snprintf(buf + n, size - n, ",%d", milli(e->r_lpf[i]));
     if (n < 0 || n >= size) { buf[0] = 0; return -1; }
     return n;
 }
@@ -538,6 +551,9 @@ static int write_state(const hkh_engine *e, char *buf, int size) {
         for (int i = 0; i < HKH_RACK && n > 0 && n < size; ++i)
             n += snprintf(buf + n, size - n, "%s%.4f", i ? "," : "", sends[k][i]);
     }
+    if (n > 0 && n < size) n += snprintf(buf + n, size - n, "],\"rlp\":[");
+    for (int i = 0; i < HKH_RACK && n > 0 && n < size; ++i)
+        n += snprintf(buf + n, size - n, "%s%.4f", i ? "," : "", e->r_lpf[i]);
     if (n > 0 && n < size) n += snprintf(buf + n, size - n, "]}");
     if (n < 0 || n >= size) { buf[0] = 0; return -1; }
     return n;
