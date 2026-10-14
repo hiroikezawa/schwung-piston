@@ -81,7 +81,7 @@ def block(inst=None):
 
 def ui_state(inst=None):
     f = read("ui_state", inst=inst).split(",")
-    assert f[0] == "3" and len(f) == 18 + 14 + 16 + 2 + 2 + 64 + 2 + 11 + 2, f  # ... rack FB, sidechain, page-2 FX, GR, PUNCH limit
+    assert f[0] == "3" and len(f) == 18 + 14 + 16 + 2 + 2 + 64 + 2 + 11 + 2 + 64, f  # ... rack FB, sidechain, page-2 FX, GR, PUNCH limit, rack sends
     return [int(x) for x in f]
 
 
@@ -275,6 +275,31 @@ for bad in ('"kmu":2', '"kmu":0.5', '"hmu":-1'):
     assert read("state", inst=q3) == before3, bad
 destroy(q3)
 write("k_mute", 0, inst=pr)
+# per-pad DLY / REV sends (0.8.0): ui_state 131-162 / 163-194, saved as rds / rrs
+s4 = ui_state(pr)
+assert s4[131:163] == [1000] * 32 and s4[163:195] == [0] * 32, "defaults: DLY 100, REV 0"
+write("r_dsend", "3:0.25", inst=pr)
+write("r_rsend", "4:0.5", inst=pr)
+for bad in ["32:1", "3", "3:x", "-1:0.5"]:
+    write("r_dsend", bad, inst=pr)
+    write("r_rsend", bad, inst=pr)
+s4 = ui_state(pr)
+assert s4[131 + 3] == 250 and s4[163 + 4] == 500 and sum(s4[131:163]) == 31 * 1000 + 250 and sum(s4[163:195]) == 500
+doc = json.loads(read("state", inst=pr))
+assert abs(doc["rds"][3] - 0.25) < 1e-4 and abs(doc["rrs"][4] - 0.5) < 1e-4
+q4 = create(b".", None)
+write("state", read("state", inst=pr), inst=q4)
+assert ui_state(q4)[131 + 3] == 250 and ui_state(q4)[163 + 4] == 500, "sends are saved"
+old_doc = dict(doc); del old_doc["rds"]; del old_doc["rrs"]
+write("state", json.dumps(old_doc), inst=q4)
+assert ui_state(q4)[131:163] == [1000] * 32 and ui_state(q4)[163:195] == [0] * 32, "old state: default sends"
+before4 = read("state", inst=q4)
+bad_doc = dict(doc); bad_doc["rrs"] = [2] * 32
+write("state", json.dumps(bad_doc), inst=q4)
+assert read("state", inst=q4) == before4, "an out-of-range send refuses the whole state"
+destroy(q4)
+write("r_dsend", "3:1", inst=pr)
+write("r_rsend", "4:0", inst=pr)
 write("r_fb", "nan", inst=pr)
 assert ui_state(pr)[116] == 400
 write("r_sc", "0.6", inst=pr)

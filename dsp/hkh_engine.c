@@ -47,6 +47,10 @@ static float hat_send_gain(float v) { return 0.9f * v * v; }
 /* Rack pad volume: squared taper, unity at full. Samples keep their own
  * level (only peaks above 0.95 are scaled down at load). */
 static float rack_vol_gain(float v) { return v * v; }
+/* Per-pad DLY / REV sends: squared too, unity at full. */
+static float rack_send_gain(float v) { return v * v; }
+#define RACK_DSEND_DEFAULT 1.0f
+#define RACK_RSEND_DEFAULT 0.0f
 #define RACK_CEILING 0.9f
 
 static void voices_init(hkh_engine *e) {
@@ -154,8 +158,9 @@ static float sc_duck(const hkh_engine *e) {
  * interpolation, which is itself a lowpass applied on every pass (at 120 BPM
  * the dotted eighth is 16537.5 samples, the worst case). FB sets both the
  * feedback and, from the first few percent, the return level -- so FB 0 is
- * no delay, and the one knob is all there is. */
-static float rack_delay_tick(hkh_engine *e, float x) {
+ * no delay, and the one knob is all there is. What goes IN is each pad's
+ * DLY send (`in`); `x` is the dry rack, which passes untouched. */
+static float rack_delay_tick(hkh_engine *e, float x, float in) {
     e->dly_fb += (e->r_fb * RACK_FB_MAX - e->dly_fb) * 0.0005f;
     float wet_t = e->r_fb > 0.0f ? 0.55f * fminf(1.0f, e->r_fb * 5.0f) : 0.0f;
     e->dly_wet += (wet_t - e->dly_wet) * 0.0005f;
@@ -168,7 +173,7 @@ static float rack_delay_tick(hkh_engine *e, float x) {
     float fr = rp - (float)i0;
     int i1 = i0 + 1 == HKH_DELAY_MAX ? 0 : i0 + 1;
     float y = fr == 0.0f ? e->dly_buf[i0] : e->dly_buf[i0] + (e->dly_buf[i1] - e->dly_buf[i0]) * fr;
-    float w = x + y * e->dly_fb;
+    float w = in + y * e->dly_fb;
     e->dly_buf[e->dly_pos] = w;
     if (++e->dly_pos == HKH_DELAY_MAX) e->dly_pos = 0;
     e->dly_quiet = (fabsf(w) > 1e-5f) ? 0 : (e->dly_quiet > HKH_DELAY_MAX ? e->dly_quiet : e->dly_quiet + 1);
@@ -177,7 +182,7 @@ static float rack_delay_tick(hkh_engine *e, float x) {
 
 static int voices_silent(const hkh_engine *e) {
     const hkh_voices *v = &e->voices;
-    return !rack_active(e) && e->dly_quiet > HKH_DELAY_MAX && !hkh_akick_active(&v->akick) && !hkh_digital_active(&v->dkick) &&
+    return !rack_active(e) && e->dly_quiet > HKH_DELAY_MAX && hkh_plate_idle(&e->plate) && !hkh_akick_active(&v->akick) && !hkh_digital_active(&v->dkick) &&
            !hkh_hat_active(&v->hat) &&
            v->rumble.quiet >= (1 << 20) && v->rumble.amount < 0.001f &&
            v->reverb.quiet >= 44100 * 3 &&
@@ -209,7 +214,7 @@ static void voices_tick(hkh_engine *e, float *l, float *r) {
      * down through the output limiter. */
     float kb = hkh_tanh((k + rumble) * (1.0f / KICK_CEILING)) * KICK_CEILING;
     /* The rack: a plain sum of one-shots, soft-clipped as its own bus. */
-    float rs = 0.0f;
+    float rs = 0.0f, ds = 0.0f, vs = 0.0f;
     for (int i = 0; i < HKH_RACK; ++i) {
         hkh_rack_voice *rv = &e->rack[i];
         if (!rv->data || rv->pos >= rv->len) continue;
@@ -217,15 +222,24 @@ static void voices_tick(hkh_engine *e, float *l, float *r) {
         /* the last 2 ms fade, so a sample that stops off zero cannot click */
         int left = rv->len - rv->pos;
         if (left < 88) x *= (float)left * (1.0f / 88.0f);
-        rs += x * rv->vel * e->r_gain[i];
+        x = x * rv->vel * e->r_gain[i];
+        rs += x;
+        ds += x * e->r_dgain[i];
+        vs += x * e->r_rgain[i];
     }
-    rs = rack_delay_tick(e, rs);
-    if (rs != 0.0f) rs = hkh_tanh(rs * (1.0f / RACK_CEILING)) * RACK_CEILING;
+    rs = rack_delay_tick(e, rs, ds);
+    /* The plate is stereo, so the rack bus is too from here; with nothing
+     * sent (and the tail gone) both sides are the mono bus, as before. */
+    float rsl = rs, rsr = rs;
+    hkh_plate_tick(&e->plate, vs, &rsl, &rsr);
+    if (rsl != 0.0f) rsl = hkh_tanh(rsl * (1.0f / RACK_CEILING)) * RACK_CEILING;
+    if (rsr != 0.0f) rsr = hkh_tanh(rsr * (1.0f / RACK_CEILING)) * RACK_CEILING;
     if (e->sc_t < e->sc_len) e->sc_t += 1.0f;
     e->sc_env = sc_duck(e);
     e->sc_gain += (1.0f - e->r_sc * e->sc_env - e->sc_gain) * SC_SMOOTH;
-    rs *= e->sc_gain;
-    float outl = kb + h + rl + rs, outr = kb + h + rr + rs;
+    rsl *= e->sc_gain;
+    rsr *= e->sc_gain;
+    float outl = kb + h + rl + rsl, outr = kb + h + rr + rsr;
     hkh_buscomp_tick(&v->bcomp, &outl, &outr);
     hkh_limiter_tick(&v->limiter, &outl, &outr);
     *l = outl;
@@ -250,7 +264,12 @@ void hkh_engine_init(hkh_engine *e, uint32_t seed) {
     for (int i = 0; i < HKH_RACK; ++i) {
         e->r_vol[i] = HKH_RACK_DEFAULT_VOL;
         e->r_gain[i] = rack_vol_gain(HKH_RACK_DEFAULT_VOL);
+        e->r_dsend[i] = RACK_DSEND_DEFAULT;
+        e->r_dgain[i] = rack_send_gain(RACK_DSEND_DEFAULT);
+        e->r_rsend[i] = RACK_RSEND_DEFAULT;
+        e->r_rgain[i] = rack_send_gain(RACK_RSEND_DEFAULT);
     }
+    hkh_plate_init(&e->plate);
     e->rng = seed ? seed : 0x9E3779B9u;
     e->pending_h_decay = -1.0f;
     e->k_ratchet_in = e->h_ratchet_in = -1;
@@ -313,6 +332,12 @@ void hkh_engine_rack_set_mute(hkh_engine *e, int pad, int on) {
 void hkh_engine_rack_set_vol(hkh_engine *e, int pad, float vol) {
     if (pad < 0 || pad >= HKH_RACK || !isfinite(vol)) return;
     e->r_vol[pad] = hkh_clamp(vol, 0.0f, 1.0f);
+}
+
+void hkh_engine_rack_set_send(hkh_engine *e, int pad, int which, float v) {
+    if (pad < 0 || pad >= HKH_RACK || !isfinite(v)) return;
+    v = hkh_clamp(v, 0.0f, 1.0f);
+    if (which) e->r_rsend[pad] = v; else e->r_dsend[pad] = v;
 }
 
 void hkh_engine_set_param(hkh_engine *e, int index, float value) {
@@ -564,8 +589,15 @@ void hkh_engine_render(hkh_engine *e, float *out_l, float *out_r, int frames,
         e->r_pending = 0;
         for (int i = 0; i < HKH_RACK; ++i) if ((m >> i) & 1u) fire_rack(e, i);
     }
-    for (int i = 0; i < HKH_RACK; ++i)
+    for (int i = 0; i < HKH_RACK; ++i) {
         e->r_gain[i] += (rack_vol_gain(e->r_vol[i]) - e->r_gain[i]) * BLOCK_SMOOTH;
+        /* sends land exactly, so a send at 0 sends nothing at all */
+        float dt = rack_send_gain(e->r_dsend[i]), rt = rack_send_gain(e->r_rsend[i]);
+        e->r_dgain[i] += (dt - e->r_dgain[i]) * BLOCK_SMOOTH;
+        e->r_rgain[i] += (rt - e->r_rgain[i]) * BLOCK_SMOOTH;
+        if (fabsf(dt - e->r_dgain[i]) < 1e-4f) e->r_dgain[i] = dt;
+        if (fabsf(rt - e->r_rgain[i]) < 1e-4f) e->r_rgain[i] = rt;
+    }
 
     /* Idle fast path: nothing is sounding and nothing will start this block
      * (no step, no ratchet, no audition). Ramps and smoothing still ran in

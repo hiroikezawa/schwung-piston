@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include "hkh_seq.h"
 #include "hkh_voices.h"
+#include "hkh_plate.h"
 
 /* The fourteen user-facing continuous parameters, all 0..1. Their ORDER is
  * the knob order: 0-6 are the KICK knobs 1-7, 7-13 the HAT knobs 1-7. Knob 8
@@ -73,6 +74,11 @@ typedef struct {
     uint8_t r_mute[HKH_RACK];
     float r_vol[HKH_RACK];         /* 0..1, as set */
     float r_gain[HKH_RACK];        /* smoothed linear gain */
+    /* Per-pad sends, 0..1 as set (squared taper), and their smoothed gains.
+     * DLY defaults to 100% -- every pad into the delay, as before 0.8.0 --
+     * and REV to 0. */
+    float r_dsend[HKH_RACK], r_rsend[HKH_RACK];
+    float r_dgain[HKH_RACK], r_rgain[HKH_RACK];
     /* The rack's dotted-eighth delay: one knob, FB. 0 = no delay at all. */
     float r_fb;                    /* as set, 0..1 */
     /* The rack's sidechain: every fired kick ducks the whole rack bus (dry
@@ -86,6 +92,7 @@ typedef struct {
     int dly_pos, dly_quiet;
     float dly_buf[HKH_DELAY_MAX];
     hkh_rack_voice rack[HKH_RACK];
+    hkh_plate plate;               /* the rack's reverb, fed by the REV sends */
     uint32_t r_pending;            /* auditions, bit per pad */
     unsigned r_hits;
 
@@ -106,6 +113,8 @@ void hkh_engine_set_rack_source(hkh_engine *e, hkh_sample_source fn, void *ctx);
 void hkh_engine_rack_toggle_step(hkh_engine *e, int pad, int step);
 void hkh_engine_rack_set_mute(hkh_engine *e, int pad, int on);
 void hkh_engine_rack_set_vol(hkh_engine *e, int pad, float vol);
+/* which = 0: DLY send, 1: REV send; 0..1 */
+void hkh_engine_rack_set_send(hkh_engine *e, int pad, int which, float v);
 void hkh_engine_rack_trigger(hkh_engine *e, int pad);
 void hkh_engine_rack_set_fb(hkh_engine *e, float fb);
 void hkh_engine_rack_set_sc(hkh_engine *e, float depth);

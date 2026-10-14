@@ -1106,6 +1106,78 @@ static void test_rack_sidechain(void) {
     printf("PASS: rack sidechain ducks on every kick and recovers; FB 100%% is long and stable\n");
 }
 
+/* Per-pad sends: a pad's DLY send decides whether IT echoes (the delay is
+ * shared); a pad's REV send feeds the rack plate, which is stereo, decays
+ * and parks itself. Defaults (DLY 100%, REV 0) are the old rack. */
+static void rack_send_run(float dsend, float rsend, float fb, float *tail_peak, float *tail_lr,
+                          float *late_peak, int *idle_after) {
+    static hkh_engine g;
+    hkh_engine_init(&g, 15);
+    hkh_engine_set_rack_source(&g, rack_click, NULL);
+    g.k_pattern = 0;
+    g.h_pattern = 0;
+    g.r_pattern[0] = 1;
+    hkh_engine_rack_set_fb(&g, fb);
+    hkh_engine_rack_set_send(&g, 0, 0, dsend);
+    hkh_engine_rack_set_send(&g, 0, 1, rsend);
+    transport stopped = {0.0, 120.0f, 0};
+    run(&g, &stopped, 64);                              /* the send gains settle */
+    transport t = {0.0, 120.0f, 1};
+    *tail_peak = *tail_lr = *late_peak = 0.0f;
+    *idle_after = 0;
+    for (int b = 0, n = 0; b < 44100 * 12 / BLOCK; ++b) {
+        render(&g, &t);
+        if (b == 4) g.r_pattern[0] = 0;                 /* one click only */
+        for (int i = 0; i < BLOCK; ++i, ++n) {
+            if (n > 44100 / 10 && n < 44100 * 2) {      /* 100 ms .. 2 s after it */
+                *tail_peak = fmaxf(*tail_peak, fmaxf(fabsf(L[i]), fabsf(R[i])));
+                *tail_lr = fmaxf(*tail_lr, fabsf(L[i] - R[i]));
+            }
+            if (n > 44100 * 10) *late_peak = fmaxf(*late_peak, fmaxf(fabsf(L[i]), fabsf(R[i])));
+        }
+    }
+    *idle_after = hkh_plate_idle(&g.plate);
+}
+static void test_rack_sends(void) {
+    memset(CLICK, 0, sizeof(CLICK));
+    CLICK[0] = 20000;
+    float tp, lr, late;
+    int idle;
+    rack_send_run(1.0f, 0.0f, 0.8f, &tp, &lr, &late, &idle);   /* the old rack */
+    printf("  DLY 100%% REV 0: tail %.4f, L-R %.6f\n", tp, lr);
+    assert(tp > 0.05f && lr == 0.0f && idle);           /* echoes, still mono */
+    float dry;
+    rack_send_run(1.0f, 0.0f, 0.0f, &dry, &lr, &late, &idle);  /* no delay at all */
+    rack_send_run(0.0f, 0.0f, 0.8f, &tp, &lr, &late, &idle);
+    printf("  DLY 0 (FB 80%%): tail %.6f vs no delay %.6f\n", tp, dry);
+    fflush(stdout);
+    assert(fabsf(tp - dry) < 1e-6f);                    /* this pad does not echo */
+    rack_send_run(0.0f, 1.0f, 0.0f, &tp, &lr, &late, &idle);
+    printf("  REV 100%%: tail %.4f, L-R %.4f, after 10 s %.6f, parked %d\n", tp, lr, late, idle);
+    assert(tp > 0.005f && tp < 0.9f);                   /* a tail, bounded */
+    assert(lr > 0.2f * tp);                             /* stereo */
+    assert(late < 1e-4f && idle);                       /* it dies and parks */
+    fflush(stdout);
+
+    /* A loud tone into REV 100% for 1.5 s: never runs away. */
+    for (int i = 0; i < TONE_LEN; ++i) TONE[i] = (int16_t)(30000.0 * sin(2 * M_PI * 110.0 * i / 44100.0));
+    static hkh_engine g;
+    hkh_engine_init(&g, 16);
+    hkh_engine_set_rack_source(&g, rack_tone, NULL);
+    g.k_pattern = 0;
+    g.h_pattern = 0;
+    g.r_pattern[0] = 1;
+    hkh_engine_rack_set_send(&g, 0, 1, 1.0f);
+    transport t = {0.0, 120.0f, 1};
+    float peak = 0.0f;
+    for (int b = 0; b < 44100 * 4 / BLOCK; ++b) {
+        render(&g, &t);
+        for (int i = 0; i < BLOCK; ++i) peak = fmaxf(peak, fmaxf(fabsf(L[i]), fabsf(R[i])));
+    }
+    assert(peak <= HKH_CEILING + 1e-4f && g.fault_count == 0);
+    printf("PASS: rack DLY send per pad, REV send into a stereo plate that decays and parks\n");
+}
+
 /* RUMBLE and REVERB at maximum cannot run away: the tail dies. */
 static void test_fx_tails(void) {
     static hkh_engine g;
@@ -1416,6 +1488,7 @@ int main(void) {
     test_comp_every_hit();
     test_rack_delay_tone();
     test_rack_sidechain();
+    test_rack_sends();
     test_reverb_tone();
     test_zipper();
     test_random();

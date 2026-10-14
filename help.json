@@ -48,6 +48,8 @@
         "Hold pad: other half",
         "  = its steps.",
         "Hold + knob 1 = vol",
+        "Hold + knob 2 = DLY",
+        "Hold + knob 3 = REV",
         "Shift + pad = mute"
       ]
     },

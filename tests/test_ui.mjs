@@ -17,6 +17,7 @@ function mockDsp() {
             [k, [0.8, 0.25, 0.5, 0.15, 0.25, 0, 0, 0.7, 0.5, 0, 0.1, 0.2, 0.5, 0][i]])),
         motion: new Array(16).fill(-1),
         rackMask: 0xFFFFFFFF & ~(1 << 4), rackMute: 0, rp: new Array(32).fill(0), rv: new Array(32).fill(0.8), rfb: 0, rsc: 0,
+        rds: new Array(32).fill(1), rrs: new Array(32).fill(0),
         fx: Object.fromEntries(FX_KEYS.map((k) => [k, FX_DEFS[k].def])), gr: 0, lim: 0,
     };
     d.set = (key, value) => {
@@ -46,6 +47,8 @@ function mockDsp() {
         case "r_fb": d.rfb = v; break;
         case "r_sc": d.rsc = v; break;
         case "r_vol": { const [a, b] = String(value).split(":").map(Number); d.rv[a] = b; break; }
+        case "r_dsend": { const [a, b] = String(value).split(":").map(Number); d.rds[a] = b; break; }
+        case "r_rsend": { const [a, b] = String(value).split(":").map(Number); d.rrs[a] = b; break; }
         default: break;
         }
     };
@@ -54,7 +57,8 @@ function mockDsp() {
         ...PARAM_KEYS.map((k) => Math.round(d.params[k] * 1000)),
         ...d.motion.map((m) => (m < 0 ? -1 : Math.round(m * 1000))), 250, 605,
         d.rackMask, d.rackMute, ...d.rp, ...d.rv.map((x) => Math.round(x * 1000)), Math.round(d.rfb * 1000), Math.round(d.rsc * 1000),
-        ...FX_KEYS.map((k) => Math.round(d.fx[k] * 10)), Math.round(d.gr * 10), d.lim].join(",");
+        ...FX_KEYS.map((k) => Math.round(d.fx[k] * 10)), Math.round(d.gr * 10), d.lim,
+        ...d.rds.map((x) => Math.round(x * 1000)), ...d.rrs.map((x) => Math.round(x * 1000))].join(",");
     return d;
 }
 
@@ -462,6 +466,13 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
     r.tick();
     assert(r.sets.some(([k, v]) => k === "r_step" && v === "1:3"));
     assert(r.sets.some(([k, v]) => k === "r_vol" && v.startsWith("1:0.9")), JSON.stringify(r.sets));
+    r.turn(1, -30);                               /* knob 2: its DLY send, down from 100 */
+    r.turn(2, 30);                                /* knob 3: its REV send, up from 0 */
+    r.tick();
+    assert(r.sets.some(([k, v]) => k === "r_dsend" && v.startsWith("1:0.")), JSON.stringify(r.sets));
+    assert(r.sets.some(([k, v]) => k === "r_rsend" && v.startsWith("1:0.") && Number(v.slice(2)) > 0), JSON.stringify(r.sets));
+    assert.equal(r.dsp.rds[0], 1, "other pads keep their sends");
+    assert(r.printed.some((t) => /DLY \d+/.test(t)) && r.printed.some((t) => /REV \d+/.test(t)), "held pad shows DLY / REV");
     assert(!r.sets.some(([k]) => k === "r_step" && r.sets.filter((x) => x[0] === "r_step").length > 1));
     assert.equal(r.leds[noteAt(2, 3)], C.RACK_STEP);
     r.release(noteAt(0, 1));

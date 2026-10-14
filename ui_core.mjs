@@ -184,7 +184,8 @@ export const C = {
 
 /* The DSP's one-line state; see write_ui_state in dsp/hkh_plugin.c. */
 export const UI_STATE_FIELDS = 18 + 14 + 16 + 2 + 2 + 32 + 32 + 1 + 1   // + the rack sidechain (0.6.3)
-    + 11 + 2;                                                            // + page-2 effects, GR, PUNCH limit (0.7.0)
+    + 11 + 2                                                             // + page-2 effects, GR, PUNCH limit (0.7.0)
+    + 32 + 32;                                                           // + rack DLY / REV sends (0.8.0)
 
 export function parseUiState(text) {
     if (typeof text !== "string" || text.length === 0) return null;
@@ -211,6 +212,7 @@ export function parseUiState(text) {
         rsc: n[117] / 1000,
         fx: Object.fromEntries(FX_KEYS.map((k, i) => [k, n[118 + i] / 10])),
         bcGr: n[129] / 10, bcLim: n[130] === 1,
+        rds: n.slice(131, 163).map((x) => x / 1000), rrs: n.slice(163, 195).map((x) => x / 1000),
     };
 }
 
@@ -219,7 +221,8 @@ export function defaultState() {
         "800,250,500,150,250,0,0,700,500,0,100,200,500,0," +
         Array(16).fill(-1).join(",") + ",0,0,0,0," +
         Array(32).fill(0).join(",") + "," + Array(32).fill(800).join(",") + ",0,0," +
-        FX_KEYS.map((k) => Math.round(FX_DEFS[k].def * 10)).join(",") + ",0,0");
+        FX_KEYS.map((k) => Math.round(FX_DEFS[k].def * 10)).join(",") + ",0,0," +
+        Array(32).fill(1000).join(",") + "," + Array(32).fill(0).join(","));
 }
 
 /* ---- LEDs (pure) --------------------------------------------------------- */
@@ -417,7 +420,8 @@ export function createUi(host) {
 
     function flushPending() {
         for (const [key, value] of pending) {
-            if (key.startsWith("r_vol:")) set("r_vol", `${key.slice(6)}:${value.toFixed(4)}`);
+            const rk = /^(r_vol|r_dsend|r_rsend):(\d+)$/.exec(key);
+            if (rk) set(rk[1], `${rk[2]}:${value.toFixed(4)}`);
             else set(key, value.toFixed(4));
         }
         pending.clear();
@@ -719,15 +723,17 @@ export function createUi(host) {
                 say(s.rsc > 0 ? `SIDECHAIN ${Math.round(s.rsc * 100)}%` : "SIDECHAIN OFF");
                 return;
             }
-            /* Hold a rack pad: knob 1 = its volume. */
+            /* Hold a rack pad: knob 1 = its volume, 2 = its DLY send,
+             * 3 = its REV send. */
             if (pad < 0 || d === 0) return;
-            if (knob !== 0) return;
+            const arr = [s.rv, s.rds, s.rrs][knob];
+            if (!arr) return;
             const now = host.now();
             const step = knobStep(now - lastTurn[knob]);
             lastTurn[knob] = now;
-            const v = Math.min(1, Math.max(0, s.rv[pad] + d * step));
-            s.rv[pad] = v;
-            pending.set(`r_vol:${pad}`, v);
+            const v = Math.min(1, Math.max(0, arr[pad] + d * step));
+            arr[pad] = v;
+            pending.set(`${["r_vol", "r_dsend", "r_rsend"][knob]}:${pad}`, v);
             dirty = true;
             return;
         }
@@ -1021,12 +1027,14 @@ export function createUi(host) {
             if ((p >> i) & 1) g.fillRect(x, y, 11, 8, 1); else g.drawRect(x, y, 11, 8, 1);
             if (s.running && s.step === i) g.fillRect(x, y + 9, 11, 1, 1);
         }
-        const v = s.rv[held];
-        const pct = `VOL ${Math.round(v * 100)}%`;
-        g.print(0, 50, pct, 1);
-        g.print(0, 40, `k1 VOL  SHIFT+PAD MUTE`, 1);
-        g.drawRect(52, 50, 76, 7, 1);
-        g.fillRect(54, 52, Math.round(72 * v), 3, 1);
+        /* knobs 1-3: VOL, DLY, REV, each a value and a bar */
+        const vals = [["VOL", s.rv[held]], ["DLY", s.rds[held]], ["REV", s.rrs[held]]];
+        vals.forEach(([name, v], k) => {
+            const x = k * 43;
+            g.print(x, 42, `${name} ${Math.round(v * 100)}`, 1);
+            g.drawRect(x, 52, 40, 6, 1);
+            g.fillRect(x + 2, 54, Math.round(36 * v), 2, 1);
+        });
     }
 
     /* ---- lifecycle ---- */
