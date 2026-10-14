@@ -79,6 +79,13 @@ typedef struct {
      * and REV to 0. */
     float r_dsend[HKH_RACK], r_rsend[HKH_RACK];
     float r_dgain[HKH_RACK], r_rgain[HKH_RACK];
+    /* Two more sends, 0 by default: CRUSH (a sample-rate reducer) and RING
+     * (a ring modulator). Both fixed effects, returned beside the dry. */
+    float r_csend[HKH_RACK], r_msend[HKH_RACK];
+    float r_cgain[HKH_RACK], r_mgain[HKH_RACK];
+    float crush_hold;              /* the reducer's held sample */
+    int crush_n;                   /* samples until the next one is taken */
+    float ring_s, ring_c;          /* the ring carrier (sin / cos) */
     /* The rack's dotted-eighth delay: one knob, FB. 0 = no delay at all. */
     float r_fb;                    /* as set, 0..1 */
     /* The rack's sidechain: every fired kick ducks the whole rack bus (dry
@@ -113,7 +120,7 @@ void hkh_engine_set_rack_source(hkh_engine *e, hkh_sample_source fn, void *ctx);
 void hkh_engine_rack_toggle_step(hkh_engine *e, int pad, int step);
 void hkh_engine_rack_set_mute(hkh_engine *e, int pad, int on);
 void hkh_engine_rack_set_vol(hkh_engine *e, int pad, float vol);
-/* which = 0: DLY send, 1: REV send; 0..1 */
+/* which = 0: DLY, 1: REV, 2: CRUSH, 3: RING send; 0..1 */
 void hkh_engine_rack_set_send(hkh_engine *e, int pad, int which, float v);
 void hkh_engine_rack_trigger(hkh_engine *e, int pad);
 void hkh_engine_rack_set_fb(hkh_engine *e, float fb);

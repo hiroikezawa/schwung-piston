@@ -1176,6 +1176,38 @@ static void test_rack_sends(void) {
     }
     assert(peak <= HKH_CEILING + 1e-4f && g.fault_count == 0);
     printf("PASS: rack DLY send per pad, REV send into a stereo plate that decays and parks\n");
+
+    /* CRUSH and RING: a 220 Hz tone sent to each grows the bands the effect
+     * makes (the 5.5 kHz hold's alias at 5292 Hz; the 500 Hz ring's
+     * 720 Hz sideband), and with the send at 0 nothing does. */
+    for (int i = 0; i < TONE_LEN; ++i) TONE[i] = (int16_t)(12000.0 * sin(2 * M_PI * 220.0 * i / 44100.0));
+    static float buf[8192];
+    double bands[3][2];
+    for (int which = 0; which < 3; ++which) {
+        hkh_engine_init(&g, 17);
+        hkh_engine_set_rack_source(&g, rack_tone, NULL);
+        g.k_pattern = 0;
+        g.h_pattern = 0;
+        g.r_pattern[0] = 1;
+        if (which == 1) hkh_engine_rack_set_send(&g, 0, 2, 1.0f);
+        if (which == 2) hkh_engine_rack_set_send(&g, 0, 3, 1.0f);
+        transport stopped = {0.0, 120.0f, 0};
+        run(&g, &stopped, 64);
+        transport t2 = {0.0, 120.0f, 1};
+        int n = 0;
+        for (int b = 0; b < 8192 / BLOCK + 40; ++b) {
+            render(&g, &t2);
+            if (b >= 40) for (int i = 0; i < BLOCK && n < 8192; ++i) buf[n++] = L[i];
+        }
+        bands[which][0] = band(buf, n, 5292.0);
+        bands[which][1] = band(buf, n, 720.0);
+    }
+    double crush_db = 10.0 * log10(bands[1][0] / bands[0][0]);
+    double ring_db = 10.0 * log10(bands[2][1] / bands[0][1]);
+    printf("  CRUSH send: 5292 Hz alias +%.1f dB | RING send: 720 Hz sideband +%.1f dB\n", crush_db, ring_db);
+    fflush(stdout);
+    assert(crush_db > 30.0 && ring_db > 30.0);
+    printf("PASS: rack CRUSH (sample-rate reducer) and RING (ring modulator) sends\n");
 }
 
 /* RUMBLE and REVERB at maximum cannot run away: the tail dies. */

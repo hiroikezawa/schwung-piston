@@ -50,6 +50,8 @@
         "Hold + knob 1 = vol",
         "Hold + knob 2 = DLY",
         "Hold + knob 3 = REV",
+        "Hold + knob 4 = CRUSH",
+        "Hold + knob 5 = RING",
         "Shift + pad = mute"
       ]
     },

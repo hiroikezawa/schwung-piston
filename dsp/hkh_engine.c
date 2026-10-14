@@ -51,6 +51,11 @@ static float rack_vol_gain(float v) { return v * v; }
 static float rack_send_gain(float v) { return v * v; }
 #define RACK_DSEND_DEFAULT 1.0f
 #define RACK_RSEND_DEFAULT 0.0f
+/* CRUSH: hold every 8th sample (44.1 kHz -> 5.5 kHz), no smoothing -- the
+ * aliasing IS the effect. RING: the send times a 500 Hz sine. Both are
+ * returned at unity, in parallel with the dry, like the delay and reverb. */
+#define RACK_CRUSH_FACTOR 8
+#define RACK_RING_W (6.2831853f * 500.0f / 44100.0f)
 #define RACK_CEILING 0.9f
 
 static void voices_init(hkh_engine *e) {
@@ -214,7 +219,7 @@ static void voices_tick(hkh_engine *e, float *l, float *r) {
      * down through the output limiter. */
     float kb = hkh_tanh((k + rumble) * (1.0f / KICK_CEILING)) * KICK_CEILING;
     /* The rack: a plain sum of one-shots, soft-clipped as its own bus. */
-    float rs = 0.0f, ds = 0.0f, vs = 0.0f;
+    float rs = 0.0f, ds = 0.0f, vs = 0.0f, cs = 0.0f, ms = 0.0f;
     for (int i = 0; i < HKH_RACK; ++i) {
         hkh_rack_voice *rv = &e->rack[i];
         if (!rv->data || rv->pos >= rv->len) continue;
@@ -226,8 +231,16 @@ static void voices_tick(hkh_engine *e, float *l, float *r) {
         rs += x;
         ds += x * e->r_dgain[i];
         vs += x * e->r_rgain[i];
+        cs += x * e->r_cgain[i];
+        ms += x * e->r_mgain[i];
     }
-    rs = rack_delay_tick(e, rs, ds);
+    /* the reducer and the ring: their returns are exactly 0 when nothing is
+     * sent, so a rack with both sends at 0 sounds as before 0.8.1 */
+    if (--e->crush_n <= 0) { e->crush_hold = cs; e->crush_n = RACK_CRUSH_FACTOR; }
+    e->ring_s += RACK_RING_W * e->ring_c;
+    e->ring_c -= RACK_RING_W * e->ring_s;
+    float fx_ret = e->crush_hold + ms * e->ring_s;
+    rs = rack_delay_tick(e, rs, ds) + fx_ret;
     /* The plate is stereo, so the rack bus is too from here; with nothing
      * sent (and the tail gone) both sides are the mono bus, as before. */
     float rsl = rs, rsr = rs;
@@ -270,6 +283,7 @@ void hkh_engine_init(hkh_engine *e, uint32_t seed) {
         e->r_rgain[i] = rack_send_gain(RACK_RSEND_DEFAULT);
     }
     hkh_plate_init(&e->plate);
+    e->ring_c = 1.0f;
     e->rng = seed ? seed : 0x9E3779B9u;
     e->pending_h_decay = -1.0f;
     e->k_ratchet_in = e->h_ratchet_in = -1;
@@ -337,7 +351,10 @@ void hkh_engine_rack_set_vol(hkh_engine *e, int pad, float vol) {
 void hkh_engine_rack_set_send(hkh_engine *e, int pad, int which, float v) {
     if (pad < 0 || pad >= HKH_RACK || !isfinite(v)) return;
     v = hkh_clamp(v, 0.0f, 1.0f);
-    if (which) e->r_rsend[pad] = v; else e->r_dsend[pad] = v;
+    if (which == 0) e->r_dsend[pad] = v;
+    else if (which == 1) e->r_rsend[pad] = v;
+    else if (which == 2) e->r_csend[pad] = v;
+    else if (which == 3) e->r_msend[pad] = v;
 }
 
 void hkh_engine_set_param(hkh_engine *e, int index, float value) {
@@ -597,6 +614,11 @@ void hkh_engine_render(hkh_engine *e, float *out_l, float *out_r, int frames,
         e->r_rgain[i] += (rt - e->r_rgain[i]) * BLOCK_SMOOTH;
         if (fabsf(dt - e->r_dgain[i]) < 1e-4f) e->r_dgain[i] = dt;
         if (fabsf(rt - e->r_rgain[i]) < 1e-4f) e->r_rgain[i] = rt;
+        float ct = rack_send_gain(e->r_csend[i]), mt = rack_send_gain(e->r_msend[i]);
+        e->r_cgain[i] += (ct - e->r_cgain[i]) * BLOCK_SMOOTH;
+        e->r_mgain[i] += (mt - e->r_mgain[i]) * BLOCK_SMOOTH;
+        if (fabsf(ct - e->r_cgain[i]) < 1e-4f) e->r_cgain[i] = ct;
+        if (fabsf(mt - e->r_mgain[i]) < 1e-4f) e->r_mgain[i] = mt;
     }
 
     /* Idle fast path: nothing is sounding and nothing will start this block

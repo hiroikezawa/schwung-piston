@@ -19,7 +19,7 @@ _Static_assert(ATOMIC_INT_LOCK_FREE == 2, "instance pool needs lock-free atomics
 
 /* Four chain slots can each hold one; two spare cover a swap in flight. */
 #define HKH_INSTANCES 6
-#define HKH_DSP_BUILD 800          /* major*10000 + minor*100 + patch: 0.8.0; bump with module.json */
+#define HKH_DSP_BUILD 801          /* major*10000 + minor*100 + patch: 0.8.1; bump with module.json */
 
 /* The shim parks a slot whose output stays below 5 LSB for ~1 s and renders
  * it only once every ~0.5 s after that (schwung_shim.c, DSP_IDLE_THRESHOLD).
@@ -252,16 +252,18 @@ static int restore_state(hkh_engine *e, const char *text) {
         for (int i = 0; i < HKH_RACK; ++i)
             if (!in_int_range(rp[i], 0, 65535) || rv[i] < 0.0f || rv[i] > 1.0f) return 0;
     }
-    /* Per-pad DLY / REV sends, since 0.8.0; an older state gets the
-     * defaults (DLY 100%, REV 0 -- exactly how it sounded). */
-    float rds[HKH_RACK], rrs[HKH_RACK];
-    int has_rds = find_key(p, "rds") != NULL, has_rrs = find_key(p, "rrs") != NULL;
-    if (has_rds && !read_key_array(p, "rds", rds, HKH_RACK)) return 0;
-    if (has_rrs && !read_key_array(p, "rrs", rrs, HKH_RACK)) return 0;
-    for (int i = 0; i < HKH_RACK; ++i) {
-        if (!has_rds) rds[i] = 1.0f;
-        if (!has_rrs) rrs[i] = 0.0f;
-        if (!(rds[i] >= 0.0f && rds[i] <= 1.0f) || !(rrs[i] >= 0.0f && rrs[i] <= 1.0f)) return 0;
+    /* Per-pad sends: DLY / REV since 0.8.0, CRUSH / RING since 0.8.1. A
+     * state without one gets its default (DLY 100%, the rest 0 -- exactly
+     * how it sounded). */
+    static const char *const send_keys[4] = {"rds", "rrs", "rcs", "rrm"};
+    float sends[4][HKH_RACK];
+    for (int k = 0; k < 4; ++k) {
+        int has = find_key(p, send_keys[k]) != NULL;
+        if (has && !read_key_array(p, send_keys[k], sends[k], HKH_RACK)) return 0;
+        for (int i = 0; i < HKH_RACK; ++i) {
+            if (!has) sends[k][i] = k == 0 ? 1.0f : 0.0f;
+            if (!(sends[k][i] >= 0.0f && sends[k][i] <= 1.0f)) return 0;
+        }
     }
     /* Kick and hat mutes, since 0.7.1; an older state restores unmuted. */
     float kmu = 0.0f, hmu = 0.0f;
@@ -301,10 +303,8 @@ static int restore_state(hkh_engine *e, const char *text) {
     for (int i = 0; i < HKH_RACK; ++i) hkh_engine_rack_set_mute(e, i, (int)((rm >> i) & 1u));
     hkh_engine_set_mute(e, 0, (int)kmu);
     hkh_engine_set_mute(e, 1, (int)hmu);
-    for (int i = 0; i < HKH_RACK; ++i) {
-        hkh_engine_rack_set_send(e, i, 0, rds[i]);
-        hkh_engine_rack_set_send(e, i, 1, rrs[i]);
-    }
+    for (int k = 0; k < 4; ++k)
+        for (int i = 0; i < HKH_RACK; ++i) hkh_engine_rack_set_send(e, i, k, sends[k][i]);
     for (int i = 0; has_rack && i < HKH_RACK; ++i) {
         e->r_pattern[i] = (uint16_t)rp[i];
         e->r_vol[i] = rv[i];
@@ -406,6 +406,8 @@ static void set_param(void *ptr, const char *key, const char *val) {
         else if (!strcmp(key, "r_vol")) hkh_engine_rack_set_vol(e, pad, f);
         else if (!strcmp(key, "r_dsend")) hkh_engine_rack_set_send(e, pad, 0, f);
         else if (!strcmp(key, "r_rsend")) hkh_engine_rack_set_send(e, pad, 1, f);
+        else if (!strcmp(key, "r_csend")) hkh_engine_rack_set_send(e, pad, 2, f);
+        else if (!strcmp(key, "r_msend")) hkh_engine_rack_set_send(e, pad, 3, f);
         else if (!strcmp(key, "r_pattern")) { if (in_int_range(f, 0, 65535)) e->r_pattern[pad] = (uint16_t)f; }
         return;
     }
@@ -493,11 +495,12 @@ static int write_ui_state(hkh_instance *inst, char *buf, int size) {
         n += snprintf(buf + n, size - n, ",%d,%d", (int)lroundf(bc->gr_peak * 10.0f), hkh_buscomp_effective(e->fx).limited);
         bc->gr_peak = 0.0f;
     }
-    /* 131-162: rack DLY sends, 163-194: rack REV sends (0.8.0) */
-    for (int i = 0; i < HKH_RACK && n > 0 && n < size; ++i)
-        n += snprintf(buf + n, size - n, ",%d", milli(e->r_dsend[i]));
-    for (int i = 0; i < HKH_RACK && n > 0 && n < size; ++i)
-        n += snprintf(buf + n, size - n, ",%d", milli(e->r_rsend[i]));
+    /* 131-162: rack DLY sends, 163-194: REV (0.8.0), 195-226: CRUSH,
+     * 227-258: RING (0.8.1) */
+    const float *const sends[4] = {e->r_dsend, e->r_rsend, e->r_csend, e->r_msend};
+    for (int k = 0; k < 4; ++k)
+        for (int i = 0; i < HKH_RACK && n > 0 && n < size; ++i)
+            n += snprintf(buf + n, size - n, ",%d", milli(sends[k][i]));
     if (n < 0 || n >= size) { buf[0] = 0; return -1; }
     return n;
 }
@@ -528,12 +531,13 @@ static int write_state(const hkh_engine *e, char *buf, int size) {
     if (n > 0 && n < size) n += snprintf(buf + n, size - n, "],\"rf\":%.4f,\"rsc\":%.4f,\"rm\":%u,\"kmu\":%d,\"hmu\":%d,\"fx\":[", e->r_fb, e->r_sc, rack_mute_mask(e), e->k_mute, e->h_mute);
     for (int i = 0; i < FX_COUNT && n > 0 && n < size; ++i)
         n += snprintf(buf + n, size - n, "%s%.4f", i ? "," : "", e->fx[i]);
-    if (n > 0 && n < size) n += snprintf(buf + n, size - n, "],\"rds\":[");
-    for (int i = 0; i < HKH_RACK && n > 0 && n < size; ++i)
-        n += snprintf(buf + n, size - n, "%s%.4f", i ? "," : "", e->r_dsend[i]);
-    if (n > 0 && n < size) n += snprintf(buf + n, size - n, "],\"rrs\":[");
-    for (int i = 0; i < HKH_RACK && n > 0 && n < size; ++i)
-        n += snprintf(buf + n, size - n, "%s%.4f", i ? "," : "", e->r_rsend[i]);
+    const float *const sends[4] = {e->r_dsend, e->r_rsend, e->r_csend, e->r_msend};
+    static const char *const send_keys[4] = {"rds", "rrs", "rcs", "rrm"};
+    for (int k = 0; k < 4; ++k) {
+        if (n > 0 && n < size) n += snprintf(buf + n, size - n, "],\"%s\":[", send_keys[k]);
+        for (int i = 0; i < HKH_RACK && n > 0 && n < size; ++i)
+            n += snprintf(buf + n, size - n, "%s%.4f", i ? "," : "", sends[k][i]);
+    }
     if (n > 0 && n < size) n += snprintf(buf + n, size - n, "]}");
     if (n < 0 || n >= size) { buf[0] = 0; return -1; }
     return n;

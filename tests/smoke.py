@@ -81,7 +81,7 @@ def block(inst=None):
 
 def ui_state(inst=None):
     f = read("ui_state", inst=inst).split(",")
-    assert f[0] == "3" and len(f) == 18 + 14 + 16 + 2 + 2 + 64 + 2 + 11 + 2 + 64, f  # ... rack FB, sidechain, page-2 FX, GR, PUNCH limit, rack sends
+    assert f[0] == "3" and len(f) == 18 + 14 + 16 + 2 + 2 + 64 + 2 + 11 + 2 + 64 + 64, f  # ... rack FB, sidechain, page-2 FX, GR, PUNCH limit, rack sends
     return [int(x) for x in f]
 
 
@@ -300,6 +300,25 @@ assert read("state", inst=q4) == before4, "an out-of-range send refuses the whol
 destroy(q4)
 write("r_dsend", "3:1", inst=pr)
 write("r_rsend", "4:0", inst=pr)
+# CRUSH / RING sends (0.8.1): ui_state 195-226 / 227-258, saved as rcs / rrm
+s5 = ui_state(pr)
+assert s5[195:259] == [0] * 64
+write("r_csend", "6:0.75", inst=pr)
+write("r_msend", "7:1", inst=pr)
+write("r_csend", "6:2", inst=pr)                 # clamped, not refused
+s5 = ui_state(pr)
+assert s5[195 + 6] == 1000 and s5[227 + 7] == 1000 and sum(s5[195:259]) == 2000, s5[195:]
+doc = json.loads(read("state", inst=pr))
+assert doc["rcs"][6] == 1 and doc["rrm"][7] == 1
+q5 = create(b".", None)
+write("state", read("state", inst=pr), inst=q5)
+assert ui_state(q5)[195 + 6] == 1000 and ui_state(q5)[227 + 7] == 1000, "CRUSH / RING sends are saved"
+old_doc = dict(doc); del old_doc["rcs"]; del old_doc["rrm"]
+write("state", json.dumps(old_doc), inst=q5)
+assert ui_state(q5)[195:259] == [0] * 64, "old state: CRUSH / RING off"
+destroy(q5)
+write("r_csend", "6:0", inst=pr)
+write("r_msend", "7:0", inst=pr)
 write("r_fb", "nan", inst=pr)
 assert ui_state(pr)[116] == 400
 write("r_sc", "0.6", inst=pr)
