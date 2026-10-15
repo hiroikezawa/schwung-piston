@@ -19,7 +19,7 @@ _Static_assert(ATOMIC_INT_LOCK_FREE == 2, "instance pool needs lock-free atomics
 
 /* Four chain slots can each hold one; two spare cover a swap in flight. */
 #define HKH_INSTANCES 6
-#define HKH_DSP_BUILD 803          /* major*10000 + minor*100 + patch: 0.8.3; bump with module.json */
+#define HKH_DSP_BUILD 804          /* major*10000 + minor*100 + patch: 0.8.4; bump with module.json */
 
 /* The shim parks a slot whose output stays below 5 LSB for ~1 s and renders
  * it only once every ~0.5 s after that (schwung_shim.c, DSP_IDLE_THRESHOLD).
@@ -256,8 +256,10 @@ static int restore_state(hkh_engine *e, const char *text) {
      * RING mixes "rcs" / "rrm"; absent = 0. A state from before DLY was a
      * per-pad insert has no "rdm": the old rack put every pad (times its
      * 0.8.0-0.8.2 send "rds", squared, if any) into a delay whose return was
-     * 0.55 * min(1, 5 * FB), and a DLY mix of half that reproduces it
-     * exactly (the dry stays whole below 50 %). */
+     * 0.55 * min(1, 5 * FB). The DLY mix is an equal-power crossfade into a
+     * unity return now, so the mix whose wet/dry ratio is that return is
+     * (2/pi) atan(0.55 * min(1, 5 FB)): the same balance, with the pad
+     * about 1.2 dB lower at most (FB 20 % and up). */
     static const char *const send_keys[4] = {"rdm", "rrs", "rcs", "rrm"};
     float sends[4][HKH_RACK];
     for (int k = 0; k < 4; ++k) {
@@ -270,7 +272,7 @@ static int restore_state(hkh_engine *e, const char *text) {
             int has_rds = find_key(p, "rds") != NULL && read_key_array(p, "rds", rds, HKH_RACK);
             for (int i = 0; i < HKH_RACK; ++i) {
                 float g = has_rds ? hkh_clamp(rds[i], 0.0f, 1.0f) : 1.0f;
-                sends[0][i] = 0.5f * fminf(1.0f, 5.0f * rf0) * g * g;
+                sends[0][i] = 0.6366198f * atanf(0.55f * fminf(1.0f, 5.0f * rf0) * g * g);
             }
         }
         for (int i = 0; i < HKH_RACK; ++i)

@@ -291,16 +291,17 @@ q4 = create(b".", None)
 write("state", read("state", inst=pr), inst=q4)
 assert ui_state(q4)[131 + 3] == 250 and ui_state(q4)[163 + 4] == 500, "sends are saved"
 # a state from before DLY was an insert: its old rack (every pad into a delay
-# returned at 0.55 * min(1, 5 FB)) becomes DLY mix 0.5 * min(1, 5 FB) per pad
-old_doc = dict(doc); del old_doc["rdm"]; del old_doc["rrs"]; old_doc["rf"] = 0.1
+# returned at 0.55 * min(1, 5 FB)) becomes the equal-loudness DLY mix with the
+# same wet/dry ratio, (2/pi) atan(0.55 * min(1, 5 FB))
+old_doc = dict(doc); del old_doc["rdm"]; del old_doc["rrs"]; old_doc["rf"] = 0.4
 write("state", json.dumps(old_doc), inst=q4)
-assert ui_state(q4)[131:163] == [250] * 32 and ui_state(q4)[163:195] == [0] * 32, ui_state(q4)[131:163]
+assert ui_state(q4)[131:163] == [320] * 32 and ui_state(q4)[163:195] == [0] * 32, ui_state(q4)[131:163]
 old_doc["rf"] = 0.0
 write("state", json.dumps(old_doc), inst=q4)
 assert ui_state(q4)[131:163] == [0] * 32, "FB 0 was no delay: DLY 0"
 old_doc["rf"] = 0.8; old_doc["rds"] = [0.5] * 32                # a 0.8.0-0.8.2 send, squared
 write("state", json.dumps(old_doc), inst=q4)
-assert ui_state(q4)[131:163] == [125] * 32, ui_state(q4)[131:163]
+assert ui_state(q4)[131:163] == [87] * 32, ui_state(q4)[131:163]
 before4 = read("state", inst=q4)
 bad_doc = dict(doc); bad_doc["rrs"] = [2] * 32
 write("state", json.dumps(bad_doc), inst=q4)

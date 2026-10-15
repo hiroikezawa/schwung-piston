@@ -170,8 +170,9 @@ static float sc_duck(const hkh_engine *e) {
  * DLY is an INSERT on each pad, and yet there is one delay line: the line is
  * linear and its time and FB are the same for every pad, so 32 delays each
  * fed by their own pad sum to exactly one delay fed by the sum. `in` is that
- * sum (each pad's wet part); this returns the echoes, at RACK_DLY_WET. */
-#define RACK_DLY_WET 0.55f
+ * sum (each pad's wet part); this returns the echoes. The first echo is as
+ * loud as the dry it repeats (unity return). */
+#define RACK_DLY_WET 1.0f
 static float rack_delay_tick(hkh_engine *e, float in) {
     e->dly_fb += (e->r_fb * RACK_FB_MAX - e->dly_fb) * 0.0005f;
     e->dly_len += (e->dly_len_target - e->dly_len) * 0.0002f;   /* tempo glide */
@@ -243,11 +244,12 @@ static void voices_tick(hkh_engine *e, float *l, float *r) {
         if (m > 0.0f) x += (x * e->ring_s - x) * m;
         if (e->r_lpf_s[i] < 1.0f) x = hkh_svf_lp(&e->r_svf[i], &e->r_svfc[i], x);
         vs += x * e->r_rgain[i];                      /* REV: a send, pre-delay */
-        /* DLY mix: the echo comes up to full by 50 % with the dry kept
-         * whole, then the dry goes down -- 100 % is echoes only. */
+        /* DLY mix, equal loudness (as Live's Delay offers on Dry/Wet): an
+         * equal-power crossfade, so 50 % is the dry and the first echo at
+         * the same level (-3 dB each) and 100 % is echoes only. */
         if (d > 0.0f) {
-            rs += x * fminf(1.0f, 2.0f - 2.0f * d);
-            ds += x * fminf(1.0f, 2.0f * d);
+            rs += x * e->r_ddry[i];
+            ds += x * e->r_dwet[i];
         } else {
             rs += x;
         }
@@ -632,6 +634,8 @@ void hkh_engine_render(hkh_engine *e, float *out_l, float *out_r, int frames,
         if (fabsf(e->r_mmix[i] - e->r_mmix_s[i]) < 1e-4f) e->r_mmix_s[i] = e->r_mmix[i];
         e->r_dmix_s[i] += (e->r_dmix[i] - e->r_dmix_s[i]) * BLOCK_SMOOTH;
         if (fabsf(e->r_dmix[i] - e->r_dmix_s[i]) < 1e-4f) e->r_dmix_s[i] = e->r_dmix[i];
+        e->r_ddry[i] = cosf(e->r_dmix_s[i] * 1.5707963f);
+        e->r_dwet[i] = sinf(e->r_dmix_s[i] * 1.5707963f);
         /* the LPF glides in knob space and lands exactly; fully open it is
          * not run at all (so the default is the unfiltered pad, bit for bit) */
         float was = e->r_lpf_s[i];

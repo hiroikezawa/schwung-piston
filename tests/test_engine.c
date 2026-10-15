@@ -1145,13 +1145,36 @@ static void test_rack_sends(void) {
     CLICK[0] = 20000;
     float tp, lr, late;
     int idle;
-    rack_send_run(0.5f, 0.0f, 0.8f, &tp, &lr, &late, &idle);   /* the old rack */
+    rack_send_run(0.5f, 0.0f, 0.8f, &tp, &lr, &late, &idle);
     printf("  DLY 50%% REV 0: tail %.4f, L-R %.6f\n", tp, lr);
     assert(tp > 0.05f && lr == 0.0f && idle);           /* echoes, still mono */
     float wet_only;
     rack_send_run(1.0f, 0.0f, 0.8f, &wet_only, &lr, &late, &idle);
     printf("  DLY 100%%: tail %.4f (echoes only)\n", wet_only);
-    assert(fabsf(wet_only - tp) < 0.02f * tp);          /* same echoes, dry gone */
+    assert(fabsf(wet_only / tp - 1.41421f) < 0.03f);    /* equal power: sin 90 / sin 45 */
+    {   /* DLY 50 %, FB 0: the hit and its one echo at the same level */
+        static hkh_engine g5;
+        hkh_engine_init(&g5, 19);
+        hkh_engine_set_rack_source(&g5, rack_click, NULL);
+        g5.k_pattern = 0;
+        g5.h_pattern = 0;
+        hkh_engine_rack_set_fb(&g5, 0.0f);
+        hkh_engine_rack_set_send(&g5, 0, 0, 0.5f);
+        transport st = {0.0, 120.0f, 0};
+        run(&g5, &st, 64);
+        hkh_engine_rack_trigger(&g5, 0);
+        float hit = 0.0f, echo = 0.0f;
+        for (int b = 0, n = 0; b < 44100 / BLOCK; ++b) {
+            render(&g5, &st);
+            for (int i = 0; i < BLOCK; ++i, ++n) {
+                if (n < 4410) hit = fmaxf(hit, fabsf(L[i]));
+                else echo = fmaxf(echo, fabsf(L[i]));
+            }
+        }
+        printf("  DLY 50%% FB 0: hit %.4f, echo %.4f\n", hit, echo);
+        fflush(stdout);
+        assert(fabsf(echo - hit) < 0.02f * hit);        /* equal loudness */
+    }
     float dry;
     rack_send_run(0.0f, 0.0f, 0.0f, &dry, &lr, &late, &idle);  /* no delay at all */
     rack_send_run(0.0f, 0.0f, 0.8f, &tp, &lr, &late, &idle);

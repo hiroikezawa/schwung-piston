@@ -81,6 +81,7 @@ typedef struct {
     float r_cmix[HKH_RACK], r_cmix_s[HKH_RACK];   /* CRUSH: sample-rate reducer */
     float r_mmix[HKH_RACK], r_mmix_s[HKH_RACK];   /* RING: ring modulator */
     float r_dmix[HKH_RACK], r_dmix_s[HKH_RACK];   /* DLY: into the delay */
+    float r_ddry[HKH_RACK], r_dwet[HKH_RACK];     /* DLY's equal-loudness gains */
     float r_rsend[HKH_RACK], r_rgain[HKH_RACK];   /* REV send */
     /* LPF: 12 dB/oct, no resonance. 1 = open = no filter at all (default). */
     float r_lpf[HKH_RACK], r_lpf_s[HKH_RACK];
