@@ -47,8 +47,10 @@ static float hat_send_gain(float v) { return 0.9f * v * v; }
 /* Rack pad volume: squared taper, unity at full. Samples keep their own
  * level (only peaks above 0.95 are scaled down at load). */
 static float rack_vol_gain(float v) { return v * v; }
-/* The REV send: squared, unity at full. */
+/* The DLY and REV sends: squared, unity at full. DLY defaults to 100%:
+ * every pad into the delay, as before 0.8.0. */
 static float rack_send_gain(float v) { return v * v; }
+#define RACK_DSEND_DEFAULT 1.0f
 /* CRUSH: hold every 8th sample (44.1 kHz -> 5.5 kHz), no smoothing -- the
  * aliasing IS the effect. RING: times a 500 Hz sine (one carrier for all
  * pads). Both are inserts with a linear dry-wet mix. */
@@ -165,19 +167,17 @@ static float sc_duck(const hkh_engine *e) {
  * not darkened: there is no filter in the feedback, and once the length has
  * settled it is read on a whole sample -- a fractional read is a linear
  * interpolation, which is itself a lowpass applied on every pass (at 120 BPM
- * the dotted eighth is 16537.5 samples, the worst case).
- *
- * DLY is an INSERT on each pad, and yet there is one delay line: the line is
- * linear and its time and FB are the same for every pad, so 32 delays each
- * fed by their own pad sum to exactly one delay fed by the sum. `in` is that
- * sum (each pad's wet part); this returns the echoes. The first echo is as
- * loud as the dry it repeats (unity return). */
-#define RACK_DLY_WET 1.0f
+ * the dotted eighth is 16537.5 samples, the worst case). FB sets both the
+ * feedback and, from the first few percent, the return level -- so FB 0 is
+ * no delay. What goes IN is each pad's DLY send (`in`); the dry rack passes
+ * untouched, outside this. Returns the echoes. */
 static float rack_delay_tick(hkh_engine *e, float in) {
     e->dly_fb += (e->r_fb * RACK_FB_MAX - e->dly_fb) * 0.0005f;
+    float wet_t = e->r_fb > 0.0f ? 0.55f * fminf(1.0f, e->r_fb * 5.0f) : 0.0f;
+    e->dly_wet += (wet_t - e->dly_wet) * 0.0005f;
     e->dly_len += (e->dly_len_target - e->dly_len) * 0.0002f;   /* tempo glide */
     if (fabsf(e->dly_len_target - e->dly_len) < 0.01f) e->dly_len = e->dly_len_target;
-    if (in == 0.0f && e->dly_quiet > HKH_DELAY_MAX) return 0.0f;
+    if (e->dly_wet < 1e-5f && wet_t == 0.0f && e->dly_quiet > HKH_DELAY_MAX) return 0.0f;
     float rp = (float)e->dly_pos - e->dly_len;
     while (rp < 0.0f) rp += (float)HKH_DELAY_MAX;
     int i0 = (int)rp;
@@ -188,7 +188,7 @@ static float rack_delay_tick(hkh_engine *e, float in) {
     e->dly_buf[e->dly_pos] = w;
     if (++e->dly_pos == HKH_DELAY_MAX) e->dly_pos = 0;
     e->dly_quiet = (fabsf(w) > 1e-5f) ? 0 : (e->dly_quiet > HKH_DELAY_MAX ? e->dly_quiet : e->dly_quiet + 1);
-    return y * RACK_DLY_WET;
+    return y * e->dly_wet;
 }
 
 static int voices_silent(const hkh_engine *e) {
@@ -239,20 +239,13 @@ static void voices_tick(hkh_engine *e, float *l, float *r) {
         if (left < 88) x *= (float)left * (1.0f / 88.0f);
         x = x * rv->vel * e->r_gain[i];
         if (take) e->crush_hold[i] = x;
-        float c = e->r_cmix_s[i], m = e->r_mmix_s[i], d = e->r_dmix_s[i];
+        float c = e->r_cmix_s[i], m = e->r_mmix_s[i];
         if (c > 0.0f) x += (e->crush_hold[i] - x) * c;
         if (m > 0.0f) x += (x * e->ring_s - x) * m;
         if (e->r_lpf_s[i] < 1.0f) x = hkh_svf_lp(&e->r_svf[i], &e->r_svfc[i], x);
-        vs += x * e->r_rgain[i];                      /* REV: a send, pre-delay */
-        /* DLY mix, equal loudness (as Live's Delay offers on Dry/Wet): an
-         * equal-power crossfade, so 50 % is the dry and the first echo at
-         * the same level (-3 dB each) and 100 % is echoes only. */
-        if (d > 0.0f) {
-            rs += x * e->r_ddry[i];
-            ds += x * e->r_dwet[i];
-        } else {
-            rs += x;
-        }
+        rs += x;                                      /* the dry, always whole */
+        ds += x * e->r_dgain[i];                      /* DLY send */
+        vs += x * e->r_rgain[i];                      /* REV send */
     }
     rs += rack_delay_tick(e, ds);
     /* The plate is stereo, so the rack bus is too from here; with nothing
@@ -292,6 +285,8 @@ void hkh_engine_init(hkh_engine *e, uint32_t seed) {
         e->r_vol[i] = HKH_RACK_DEFAULT_VOL;
         e->r_gain[i] = rack_vol_gain(HKH_RACK_DEFAULT_VOL);
         e->r_lpf[i] = e->r_lpf_s[i] = 1.0f;
+        e->r_dsend[i] = RACK_DSEND_DEFAULT;
+        e->r_dgain[i] = rack_send_gain(RACK_DSEND_DEFAULT);
     }
     hkh_plate_init(&e->plate);
     e->ring_c = 1.0f;
@@ -362,7 +357,7 @@ void hkh_engine_rack_set_vol(hkh_engine *e, int pad, float vol) {
 void hkh_engine_rack_set_send(hkh_engine *e, int pad, int which, float v) {
     if (pad < 0 || pad >= HKH_RACK || !isfinite(v)) return;
     v = hkh_clamp(v, 0.0f, 1.0f);
-    if (which == 0) e->r_dmix[pad] = v;
+    if (which == 0) e->r_dsend[pad] = v;
     else if (which == 1) e->r_rsend[pad] = v;
     else if (which == 2) e->r_cmix[pad] = v;
     else if (which == 3) e->r_mmix[pad] = v;
@@ -632,10 +627,9 @@ void hkh_engine_render(hkh_engine *e, float *out_l, float *out_r, int frames,
         if (fabsf(e->r_cmix[i] - e->r_cmix_s[i]) < 1e-4f) e->r_cmix_s[i] = e->r_cmix[i];
         e->r_mmix_s[i] += (e->r_mmix[i] - e->r_mmix_s[i]) * BLOCK_SMOOTH;
         if (fabsf(e->r_mmix[i] - e->r_mmix_s[i]) < 1e-4f) e->r_mmix_s[i] = e->r_mmix[i];
-        e->r_dmix_s[i] += (e->r_dmix[i] - e->r_dmix_s[i]) * BLOCK_SMOOTH;
-        if (fabsf(e->r_dmix[i] - e->r_dmix_s[i]) < 1e-4f) e->r_dmix_s[i] = e->r_dmix[i];
-        e->r_ddry[i] = cosf(e->r_dmix_s[i] * 1.5707963f);
-        e->r_dwet[i] = sinf(e->r_dmix_s[i] * 1.5707963f);
+        float dt = rack_send_gain(e->r_dsend[i]);
+        e->r_dgain[i] += (dt - e->r_dgain[i]) * BLOCK_SMOOTH;
+        if (fabsf(dt - e->r_dgain[i]) < 1e-4f) e->r_dgain[i] = dt;
         /* the LPF glides in knob space and lands exactly; fully open it is
          * not run at all (so the default is the unfiltered pad, bit for bit) */
         float was = e->r_lpf_s[i];

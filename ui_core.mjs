@@ -240,7 +240,7 @@ export function defaultState() {
         Array(16).fill(-1).join(",") + ",0,0,0,0," +
         Array(32).fill(0).join(",") + "," + Array(32).fill(800).join(",") + ",0,0," +
         FX_KEYS.map((k) => Math.round(FX_DEFS[k].def * 10)).join(",") + ",0,0," +
-        Array(128).fill(0).join(",") + "," + Array(32).fill(1000).join(","));
+        Array(32).fill(1000).join(",") + "," + Array(96).fill(0).join(",") + "," + Array(32).fill(1000).join(","));
 }
 
 /* ---- LEDs (pure) --------------------------------------------------------- */
@@ -728,7 +728,7 @@ export function createUi(host) {
                 lastTurn[knob] = now;
                 s.rfb = Math.min(1, Math.max(0, s.rfb + d * step));
                 pending.set("r_fb", s.rfb);
-                say(`DELAY FB ${Math.round(s.rfb * 100)}%`);
+                say(s.rfb > 0 ? `DELAY FB ${Math.round(s.rfb * 100)}%` : "DELAY OFF");
                 return;
             }
             if (knob === 5 && d !== 0 && pad < 0) {
