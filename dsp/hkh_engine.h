@@ -74,24 +74,23 @@ typedef struct {
     uint8_t r_mute[HKH_RACK];
     float r_vol[HKH_RACK];         /* 0..1, as set */
     float r_gain[HKH_RACK];        /* smoothed linear gain */
-    /* Per-pad sends, 0..1 as set (squared taper), and their smoothed gains.
-     * DLY defaults to 100% -- every pad into the delay, as before 0.8.0 --
-     * and REV to 0. */
-    float r_dsend[HKH_RACK], r_rsend[HKH_RACK];
-    float r_dgain[HKH_RACK], r_rgain[HKH_RACK];
-    /* Two more sends, 0 by default: CRUSH (a sample-rate reducer) and RING
-     * (a ring modulator). Both fixed effects, returned beside the dry. */
-    float r_csend[HKH_RACK], r_msend[HKH_RACK];
-    float r_cgain[HKH_RACK], r_mgain[HKH_RACK];
-    /* Per-pad LPF, an insert BEFORE the sends: 12 dB/oct, no resonance.
-     * 0..1 as set (1 = open = no filter at all, the default), smoothed. */
+    /* Each pad's chain: VOL -> CRUSH -> RING -> LPF -> DLY, all inserts,
+     * plus a REV send taken after the LPF. CRUSH / RING / DLY are dry-wet
+     * mixes 0..1 as set, with their smoothed values (_s); REV is a send
+     * level (squared taper) with its smoothed gain. */
+    float r_cmix[HKH_RACK], r_cmix_s[HKH_RACK];   /* CRUSH: sample-rate reducer */
+    float r_mmix[HKH_RACK], r_mmix_s[HKH_RACK];   /* RING: ring modulator */
+    float r_dmix[HKH_RACK], r_dmix_s[HKH_RACK];   /* DLY: into the delay */
+    float r_rsend[HKH_RACK], r_rgain[HKH_RACK];   /* REV send */
+    /* LPF: 12 dB/oct, no resonance. 1 = open = no filter at all (default). */
     float r_lpf[HKH_RACK], r_lpf_s[HKH_RACK];
     hkh_svf r_svf[HKH_RACK];
     hkh_svf_coef r_svfc[HKH_RACK];
-    float crush_hold;              /* the reducer's held sample */
-    int crush_n;                   /* samples until the next one is taken */
+    float crush_hold[HKH_RACK];    /* each pad's held sample */
+    int crush_n;                   /* samples until the next ones are taken */
     float ring_s, ring_c;          /* the ring carrier (sin / cos) */
-    /* The rack's dotted-eighth delay: one knob, FB. 0 = no delay at all. */
+    /* The rack's dotted-eighth delay: FB is the feedback, shared by all
+     * pads (each pad's DLY decides how much of it goes in). */
     float r_fb;                    /* as set, 0..1 */
     /* The rack's sidechain: every fired kick ducks the whole rack bus (dry
      * and delay) by r_sc, recovering along sc_env. 0 = off. */
@@ -99,7 +98,7 @@ typedef struct {
     float sc_env;                  /* 1 at a kick, falls to 0 over sc_len */
     float sc_t, sc_len;            /* samples since the kick / pump length */
     float sc_gain;                 /* smoothed gain applied to the rack */
-    float dly_fb, dly_wet;         /* smoothed feedback / return level */
+    float dly_fb;                  /* smoothed feedback */
     float dly_len, dly_len_target; /* samples, follows the tempo */
     int dly_pos, dly_quiet;
     float dly_buf[HKH_DELAY_MAX];
@@ -125,7 +124,7 @@ void hkh_engine_set_rack_source(hkh_engine *e, hkh_sample_source fn, void *ctx);
 void hkh_engine_rack_toggle_step(hkh_engine *e, int pad, int step);
 void hkh_engine_rack_set_mute(hkh_engine *e, int pad, int on);
 void hkh_engine_rack_set_vol(hkh_engine *e, int pad, float vol);
-/* which = 0: DLY, 1: REV, 2: CRUSH, 3: RING send; 0..1 */
+/* which = 0: DLY mix, 1: REV send, 2: CRUSH mix, 3: RING mix; 0..1 */
 void hkh_engine_rack_set_send(hkh_engine *e, int pad, int which, float v);
 /* 0..1: 0 = 80 Hz, 1 = open (no filter) */
 void hkh_engine_rack_set_lpf(hkh_engine *e, int pad, float v);

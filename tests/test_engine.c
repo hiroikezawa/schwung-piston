@@ -1005,6 +1005,7 @@ static void test_rack_delay_tone(void) {
     g.h_pattern = 0;
     g.r_pattern[0] = 1;                                 /* pad 1, step 1 */
     g.r_fb = 0.8f;
+    hkh_engine_rack_set_send(&g, 0, 0, 0.5f);           /* DLY mix: dry + echoes */
     transport t = {0.0, 120.0f, 1};
     int n = 0;
     for (int b = 0; b < 44100 * 2 / BLOCK; ++b) {       /* the 2nd bar starts at 2 s */
@@ -1089,6 +1090,7 @@ static void test_rack_sidechain(void) {
     g.h_pattern = 0;
     g.r_pattern[0] = 1;
     hkh_engine_rack_set_fb(&g, 1.0f);
+    hkh_engine_rack_set_send(&g, 0, 0, 0.5f);
     transport t = {0.0, 120.0f, 1};
     const int gap = 16538, blocks = 44100 * 4 / BLOCK;
     static float echo[16];
@@ -1143,11 +1145,15 @@ static void test_rack_sends(void) {
     CLICK[0] = 20000;
     float tp, lr, late;
     int idle;
-    rack_send_run(1.0f, 0.0f, 0.8f, &tp, &lr, &late, &idle);   /* the old rack */
-    printf("  DLY 100%% REV 0: tail %.4f, L-R %.6f\n", tp, lr);
+    rack_send_run(0.5f, 0.0f, 0.8f, &tp, &lr, &late, &idle);   /* the old rack */
+    printf("  DLY 50%% REV 0: tail %.4f, L-R %.6f\n", tp, lr);
     assert(tp > 0.05f && lr == 0.0f && idle);           /* echoes, still mono */
+    float wet_only;
+    rack_send_run(1.0f, 0.0f, 0.8f, &wet_only, &lr, &late, &idle);
+    printf("  DLY 100%%: tail %.4f (echoes only)\n", wet_only);
+    assert(fabsf(wet_only - tp) < 0.02f * tp);          /* same echoes, dry gone */
     float dry;
-    rack_send_run(1.0f, 0.0f, 0.0f, &dry, &lr, &late, &idle);  /* no delay at all */
+    rack_send_run(0.0f, 0.0f, 0.0f, &dry, &lr, &late, &idle);  /* no delay at all */
     rack_send_run(0.0f, 0.0f, 0.8f, &tp, &lr, &late, &idle);
     printf("  DLY 0 (FB 80%%): tail %.6f vs no delay %.6f\n", tp, dry);
     fflush(stdout);
@@ -1182,7 +1188,7 @@ static void test_rack_sends(void) {
      * 720 Hz sideband), and with the send at 0 nothing does. */
     for (int i = 0; i < TONE_LEN; ++i) TONE[i] = (int16_t)(12000.0 * sin(2 * M_PI * 220.0 * i / 44100.0));
     static float buf[8192];
-    double bands[3][2];
+    double bands[3][3];
     for (int which = 0; which < 3; ++which) {
         hkh_engine_init(&g, 17);
         hkh_engine_set_rack_source(&g, rack_tone, NULL);
@@ -1201,13 +1207,17 @@ static void test_rack_sends(void) {
         }
         bands[which][0] = band(buf, n, 5292.0);
         bands[which][1] = band(buf, n, 720.0);
+        bands[which][2] = band(buf, n, 220.0);
     }
     double crush_db = 10.0 * log10(bands[1][0] / bands[0][0]);
     double ring_db = 10.0 * log10(bands[2][1] / bands[0][1]);
-    printf("  CRUSH send: 5292 Hz alias +%.1f dB | RING send: 720 Hz sideband +%.1f dB\n", crush_db, ring_db);
+    double ring_dry_db = 10.0 * log10(bands[2][2] / bands[0][2]);
+    printf("  CRUSH 100%%: 5292 Hz alias +%.1f dB | RING 100%%: 720 Hz sideband +%.1f dB, 220 Hz %.1f dB\n",
+           crush_db, ring_db, ring_dry_db);
     fflush(stdout);
     assert(crush_db > 30.0 && ring_db > 30.0);
-    printf("PASS: rack CRUSH (sample-rate reducer) and RING (ring modulator) sends\n");
+    assert(ring_dry_db < -30.0);                        /* an insert: 100 % replaces the dry */
+    printf("PASS: rack CRUSH (sample-rate reducer) and RING (ring modulator) inserts\n");
 
     /* LPF: a 4 kHz tone through pad 1's filter. Open = the tone untouched;
      * half way (~1.3 kHz) it is well down; closed (80 Hz) nearly gone. The
@@ -1516,6 +1526,7 @@ static void test_rack(void) {
     int lag = (int)(0.75 * 60.0 / 120.0 * 44100.0 / BLOCK);      /* 0.375 s */
     for (int pass = 0; pass < 2; ++pass) {
         hkh_engine_rack_set_fb(&E, pass ? 0.5f : 0.0f);
+        hkh_engine_rack_set_send(&E, 0, 0, pass ? 0.5f : 0.0f);   /* pad 1's DLY mix */
         for (int i = 0; i < 200; ++i) render(&E, &s2);           /* settle */
         hkh_engine_rack_trigger(&E, 0);
         render(&E, &s2);

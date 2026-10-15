@@ -275,30 +275,38 @@ for bad in ('"kmu":2', '"kmu":0.5', '"hmu":-1'):
     assert read("state", inst=q3) == before3, bad
 destroy(q3)
 write("k_mute", 0, inst=pr)
-# per-pad DLY / REV sends (0.8.0): ui_state 131-162 / 163-194, saved as rds / rrs
+# per-pad DLY mix / REV send: ui_state 131-162 / 163-194, saved as rdm / rrs
 s4 = ui_state(pr)
-assert s4[131:163] == [1000] * 32 and s4[163:195] == [0] * 32, "defaults: DLY 100, REV 0"
+assert s4[131:163] == [0] * 32 and s4[163:195] == [0] * 32, "defaults: DLY 0, REV 0"
 write("r_dsend", "3:0.25", inst=pr)
 write("r_rsend", "4:0.5", inst=pr)
 for bad in ["32:1", "3", "3:x", "-1:0.5"]:
     write("r_dsend", bad, inst=pr)
     write("r_rsend", bad, inst=pr)
 s4 = ui_state(pr)
-assert s4[131 + 3] == 250 and s4[163 + 4] == 500 and sum(s4[131:163]) == 31 * 1000 + 250 and sum(s4[163:195]) == 500
+assert s4[131 + 3] == 250 and s4[163 + 4] == 500 and sum(s4[131:163]) == 250 and sum(s4[163:195]) == 500
 doc = json.loads(read("state", inst=pr))
-assert abs(doc["rds"][3] - 0.25) < 1e-4 and abs(doc["rrs"][4] - 0.5) < 1e-4
+assert abs(doc["rdm"][3] - 0.25) < 1e-4 and abs(doc["rrs"][4] - 0.5) < 1e-4
 q4 = create(b".", None)
 write("state", read("state", inst=pr), inst=q4)
 assert ui_state(q4)[131 + 3] == 250 and ui_state(q4)[163 + 4] == 500, "sends are saved"
-old_doc = dict(doc); del old_doc["rds"]; del old_doc["rrs"]
+# a state from before DLY was an insert: its old rack (every pad into a delay
+# returned at 0.55 * min(1, 5 FB)) becomes DLY mix 0.5 * min(1, 5 FB) per pad
+old_doc = dict(doc); del old_doc["rdm"]; del old_doc["rrs"]; old_doc["rf"] = 0.1
 write("state", json.dumps(old_doc), inst=q4)
-assert ui_state(q4)[131:163] == [1000] * 32 and ui_state(q4)[163:195] == [0] * 32, "old state: default sends"
+assert ui_state(q4)[131:163] == [250] * 32 and ui_state(q4)[163:195] == [0] * 32, ui_state(q4)[131:163]
+old_doc["rf"] = 0.0
+write("state", json.dumps(old_doc), inst=q4)
+assert ui_state(q4)[131:163] == [0] * 32, "FB 0 was no delay: DLY 0"
+old_doc["rf"] = 0.8; old_doc["rds"] = [0.5] * 32                # a 0.8.0-0.8.2 send, squared
+write("state", json.dumps(old_doc), inst=q4)
+assert ui_state(q4)[131:163] == [125] * 32, ui_state(q4)[131:163]
 before4 = read("state", inst=q4)
 bad_doc = dict(doc); bad_doc["rrs"] = [2] * 32
 write("state", json.dumps(bad_doc), inst=q4)
 assert read("state", inst=q4) == before4, "an out-of-range send refuses the whole state"
 destroy(q4)
-write("r_dsend", "3:1", inst=pr)
+write("r_dsend", "3:0", inst=pr)
 write("r_rsend", "4:0", inst=pr)
 # CRUSH / RING sends (0.8.1): ui_state 195-226 / 227-258, saved as rcs / rrm
 s5 = ui_state(pr)

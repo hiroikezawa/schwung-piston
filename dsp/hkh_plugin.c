@@ -19,7 +19,7 @@ _Static_assert(ATOMIC_INT_LOCK_FREE == 2, "instance pool needs lock-free atomics
 
 /* Four chain slots can each hold one; two spare cover a swap in flight. */
 #define HKH_INSTANCES 6
-#define HKH_DSP_BUILD 802          /* major*10000 + minor*100 + patch: 0.8.2; bump with module.json */
+#define HKH_DSP_BUILD 803          /* major*10000 + minor*100 + patch: 0.8.3; bump with module.json */
 
 /* The shim parks a slot whose output stays below 5 LSB for ~1 s and renders
  * it only once every ~0.5 s after that (schwung_shim.c, DSP_IDLE_THRESHOLD).
@@ -252,18 +252,29 @@ static int restore_state(hkh_engine *e, const char *text) {
         for (int i = 0; i < HKH_RACK; ++i)
             if (!in_int_range(rp[i], 0, 65535) || rv[i] < 0.0f || rv[i] > 1.0f) return 0;
     }
-    /* Per-pad sends: DLY / REV since 0.8.0, CRUSH / RING since 0.8.1. A
-     * state without one gets its default (DLY 100%, the rest 0 -- exactly
-     * how it sounded). */
-    static const char *const send_keys[4] = {"rds", "rrs", "rcs", "rrm"};
+    /* Per pad: the DLY mix "rdm" (0.8.3), the REV send "rrs", the CRUSH and
+     * RING mixes "rcs" / "rrm"; absent = 0. A state from before DLY was a
+     * per-pad insert has no "rdm": the old rack put every pad (times its
+     * 0.8.0-0.8.2 send "rds", squared, if any) into a delay whose return was
+     * 0.55 * min(1, 5 * FB), and a DLY mix of half that reproduces it
+     * exactly (the dry stays whole below 50 %). */
+    static const char *const send_keys[4] = {"rdm", "rrs", "rcs", "rrm"};
     float sends[4][HKH_RACK];
     for (int k = 0; k < 4; ++k) {
         int has = find_key(p, send_keys[k]) != NULL;
         if (has && !read_key_array(p, send_keys[k], sends[k], HKH_RACK)) return 0;
-        for (int i = 0; i < HKH_RACK; ++i) {
-            if (!has) sends[k][i] = k == 0 ? 1.0f : 0.0f;
-            if (!(sends[k][i] >= 0.0f && sends[k][i] <= 1.0f)) return 0;
+        if (!has) for (int i = 0; i < HKH_RACK; ++i) sends[k][i] = 0.0f;
+        if (!has && k == 0) {
+            float rf0 = 0.0f, rds[HKH_RACK];
+            if (find_key(p, "rf") && (!read_key_number(p, "rf", &rf0) || rf0 < 0.0f || rf0 > 1.0f)) return 0;
+            int has_rds = find_key(p, "rds") != NULL && read_key_array(p, "rds", rds, HKH_RACK);
+            for (int i = 0; i < HKH_RACK; ++i) {
+                float g = has_rds ? hkh_clamp(rds[i], 0.0f, 1.0f) : 1.0f;
+                sends[0][i] = 0.5f * fminf(1.0f, 5.0f * rf0) * g * g;
+            }
         }
+        for (int i = 0; i < HKH_RACK; ++i)
+            if (!(sends[k][i] >= 0.0f && sends[k][i] <= 1.0f)) return 0;
     }
     /* Per-pad LPF, since 0.8.2; absent = open. */
     float rlp[HKH_RACK];
@@ -505,9 +516,9 @@ static int write_ui_state(hkh_instance *inst, char *buf, int size) {
         n += snprintf(buf + n, size - n, ",%d,%d", (int)lroundf(bc->gr_peak * 10.0f), hkh_buscomp_effective(e->fx).limited);
         bc->gr_peak = 0.0f;
     }
-    /* 131-162: rack DLY sends, 163-194: REV (0.8.0), 195-226: CRUSH,
-     * 227-258: RING (0.8.1) */
-    const float *const sends[4] = {e->r_dsend, e->r_rsend, e->r_csend, e->r_msend};
+    /* 131-162: rack DLY mixes, 163-194: REV sends, 195-226: CRUSH mixes,
+     * 227-258: RING mixes */
+    const float *const sends[4] = {e->r_dmix, e->r_rsend, e->r_cmix, e->r_mmix};
     for (int k = 0; k < 4; ++k)
         for (int i = 0; i < HKH_RACK && n > 0 && n < size; ++i)
             n += snprintf(buf + n, size - n, ",%d", milli(sends[k][i]));
@@ -544,8 +555,8 @@ static int write_state(const hkh_engine *e, char *buf, int size) {
     if (n > 0 && n < size) n += snprintf(buf + n, size - n, "],\"rf\":%.4f,\"rsc\":%.4f,\"rm\":%u,\"kmu\":%d,\"hmu\":%d,\"fx\":[", e->r_fb, e->r_sc, rack_mute_mask(e), e->k_mute, e->h_mute);
     for (int i = 0; i < FX_COUNT && n > 0 && n < size; ++i)
         n += snprintf(buf + n, size - n, "%s%.4f", i ? "," : "", e->fx[i]);
-    const float *const sends[4] = {e->r_dsend, e->r_rsend, e->r_csend, e->r_msend};
-    static const char *const send_keys[4] = {"rds", "rrs", "rcs", "rrm"};
+    const float *const sends[4] = {e->r_dmix, e->r_rsend, e->r_cmix, e->r_mmix};
+    static const char *const send_keys[4] = {"rdm", "rrs", "rcs", "rrm"};
     for (int k = 0; k < 4; ++k) {
         if (n > 0 && n < size) n += snprintf(buf + n, size - n, "],\"%s\":[", send_keys[k]);
         for (int i = 0; i < HKH_RACK && n > 0 && n < size; ++i)

@@ -18,7 +18,7 @@ function mockDsp() {
             [k, [0.8, 0.25, 0.5, 0.15, 0.25, 0, 0, 0.7, 0.5, 0, 0.1, 0.2, 0.5, 0][i]])),
         motion: new Array(16).fill(-1),
         rackMask: 0xFFFFFFFF & ~(1 << 4), rackMute: 0, rp: new Array(32).fill(0), rv: new Array(32).fill(0.8), rfb: 0, rsc: 0,
-        rds: new Array(32).fill(1), rrs: new Array(32).fill(0), rcs: new Array(32).fill(0), rms: new Array(32).fill(0), rlp: new Array(32).fill(1),
+        rds: new Array(32).fill(0), rrs: new Array(32).fill(0), rcs: new Array(32).fill(0), rms: new Array(32).fill(0), rlp: new Array(32).fill(1),
         fx: Object.fromEntries(FX_KEYS.map((k) => [k, FX_DEFS[k].def])), gr: 0, lim: 0,
     };
     d.set = (key, value) => {
@@ -472,10 +472,10 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
     r.tick();
     assert(r.sets.some(([k, v]) => k === "r_step" && v === "1:3"));
     assert(r.sets.some(([k, v]) => k === "r_vol" && v.startsWith("1:0.9")), JSON.stringify(r.sets));
-    r.turn(1, -30);                               /* knob 2: its DLY send, down from 100 */
+    r.turn(1, 30);                                /* knob 2: its DLY mix, up from 0 */
     r.turn(2, 30);                                /* knob 3: its REV send, up from 0 */
     r.tick();
-    assert(r.sets.some(([k, v]) => k === "r_dsend" && v.startsWith("1:0.")), JSON.stringify(r.sets));
+    assert(r.sets.some(([k, v]) => k === "r_dsend" && v.startsWith("1:0.") && Number(v.slice(2)) > 0), JSON.stringify(r.sets));
     assert(r.sets.some(([k, v]) => k === "r_rsend" && v.startsWith("1:0.") && Number(v.slice(2)) > 0), JSON.stringify(r.sets));
     r.turn(3, 30);                                /* knob 4: its CRUSH send */
     r.turn(4, 30);                                /* knob 5: its RING send */
@@ -487,7 +487,7 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
     r.tick();
     assert(r.sets.some(([k, v]) => k === "r_lpf" && v.startsWith("1:0.")), JSON.stringify(r.sets));
     assert.equal(r.dsp.rsc, scBefore, "SIDECHAIN untouched while a pad is held");
-    assert.equal(r.dsp.rds[0], 1, "other pads keep their sends");
+    assert.equal(r.dsp.rds[0], 0, "other pads keep their own values");
     assert(["VOL", "DLY", "REV", "CRS", "RNG", "LPF"].every((n) => r.printed.includes(n)), "held pad shows its six knobs");
     assert.equal(lpfLabel(1), "-");
     assert.equal(lpfLabel(0), "80");

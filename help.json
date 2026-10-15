@@ -59,10 +59,11 @@
     {
       "title": "Rack delay",
       "lines": [
-        "Knob 7: DELAY FB",
         "Dotted 1/8, tempo",
-        "  synced, rack only.",
-        "0 = no delay."
+        "  synced, per pad:",
+        "hold pad + knob 2.",
+        "Knob 7: FB (repeats)",
+        "  for all pads."
       ]
     },
     {
