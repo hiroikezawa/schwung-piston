@@ -101,12 +101,12 @@ export const FX_DEFS = {
     kt_drive: { min: 0, max: 24, res: 0.5, def: 6, label: "DRIVE", name: "TUBE DRIVE", show: (v) => `${v.toFixed(1)}dB` },
     hh_amt: { min: 0, max: 1, res: 0.01, def: 0, label: "HARM", name: "HARMONICS", show: pct },
     hh_freq: { options: ["1.9k", "2.8k", "6.6k", "9.8k"], def: 2, label: "FREQ", name: "HARM FREQ" },
-    bc_thresh: { min: -36, max: 0, res: 0.5, def: -12, label: "THRSH", name: "THRESHOLD", show: (v) => `${v.toFixed(1)}dB` },
+    bc_thresh: { min: -36, max: 0, res: 0.5, def: -12, label: "THRSH", name: "THRESHOLD", show: (v) => `${v.toFixed(1)}dB`, cell: (v) => v.toFixed(1) },
     bc_ratio: { options: ["OFF", "2:1", "4:1", "10:1"], def: 0, label: "RATIO", name: "RATIO" },
-    bc_attack: { min: 1, max: 30, res: 0.5, def: 30, label: "ATK", name: "ATTACK", show: (v) => `${v.toFixed(1)}ms` },
-    bc_release: { min: 50, max: 600, res: 10, def: 150, label: "REL", name: "RELEASE", show: (v) => `${Math.round(v)}ms` },
-    bc_schpf: { min: 20, max: 200, res: 5, def: 90, label: "SCHPF", name: "SC HPF", show: (v) => `${Math.round(v)}Hz` },
-    bc_makeup: { min: -12, max: 12, res: 0.5, def: 0, label: "MKUP", name: "MAKEUP", show: (v) => `${db1(v)}dB` },
+    bc_attack: { min: 1, max: 30, res: 0.5, def: 30, label: "ATK", name: "ATTACK", show: (v) => `${v.toFixed(1)}ms`, cell: (v) => v.toFixed(1) },
+    bc_release: { min: 50, max: 600, res: 10, def: 150, label: "REL", name: "RELEASE", show: (v) => `${Math.round(v)}ms`, cell: (v) => String(Math.round(v)) },
+    bc_schpf: { min: 20, max: 200, res: 5, def: 90, label: "SCHPF", name: "SC HPF", show: (v) => `${Math.round(v)}Hz`, cell: (v) => String(Math.round(v)) },
+    bc_makeup: { min: -12, max: 12, res: 0.5, def: 0, label: "MKUP", name: "MAKEUP", show: (v) => `${db1(v)}dB`, cell: db1 },
     bc_punch: { options: ["OFF", "ON"], def: 1, label: "PUNCH", name: "PUNCH" },
 };
 export const FX_KNOBS = [
@@ -118,6 +118,13 @@ export const FX_TITLES = ["KICK FX", "HAT FX", "BUS COMP"];
 export function fxText(key, v) {
     const d = FX_DEFS[key];
     return d.options ? d.options[Math.round(v)] || "?" : d.show(v);
+}
+/* The same value for a 32-pixel cell of the knob overview: at most five
+ * characters, so neighbours never run into each other. The unit is left
+ * out where the full text would not fit; the touched-knob view shows it. */
+export function fxCellText(key, v) {
+    const d = FX_DEFS[key];
+    return d.cell && !d.options ? d.cell(v) : fxText(key, v);
 }
 /* Where a value sits on its knob's travel, 0..1 (for the bar). */
 export function fxPos(key, v) {
@@ -1001,9 +1008,12 @@ export function createUi(host) {
             for (let k = 0; k < 7; k++) {
                 const key = keys[k];
                 if (!key) continue;
-                const x = (k % 4) * 32, y = k < 4 ? 14 : 34;
-                g.print(x + 1, y, FX_DEFS[key].label, 1);
-                let txt = fxText(key, s.fx[key]);
+                const x = (k % 4) * 32, y = k < 4 ? 15 : 35;
+                /* the label inverted in its own 31-pixel box: the columns
+                 * read as columns even where two long labels sit side by side */
+                g.fillRect(x, y - 1, 31, 9, 1);
+                g.print(x + 1, y, FX_DEFS[key].label, 0);
+                let txt = fxCellText(key, s.fx[key]);
                 if (key === "bc_punch" && s.bcLim) txt += "*";
                 g.print(x + 1, y + 9, txt, 1);
             }

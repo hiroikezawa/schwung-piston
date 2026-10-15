@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import {
-    lpfLabel,
+    lpfLabel, fxCellText,
     createUi, padAt, noteAt, computeLeds, parseUiState, defaultState, knobStep, C,
     MODE_HAT, MODE_RACK, PARAM_KEYS, stepPad, padStep, PRESET_FILE, parsePresets,
     rackPadAt, rackStepPad, rackPadStep, PAGE_TICKS, FX_KEYS, FX_DEFS,
@@ -576,3 +576,12 @@ assert.equal(manifest.ui_chain, "ui_chain.js");
 assert.equal(manifest.capabilities.ui_hierarchy, undefined, "a hierarchy would replace the pad UI");
 
 console.log("PASS: one voice per surface, selectors, jog 8/16 steps, FILL, DECAY touch, LEDs, screen hand-back");
+
+/* ---- the BUS COMP overview: every value fits its 32-pixel cell ------------- */
+for (const key of FX_KNOBS_FOR_TEST()) {
+    const d = FX_DEFS[key];
+    const vals = d.options ? d.options.map((_, i) => i) : Array.from({ length: Math.round((d.max - d.min) / d.res) + 1 }, (_, i) => d.min + i * d.res);
+    for (const v of vals) assert(fxCellText(key, v).length <= 5, `${key} ${v} -> "${fxCellText(key, v)}"`);
+}
+function FX_KNOBS_FOR_TEST() { return ["bc_thresh", "bc_ratio", "bc_attack", "bc_release", "bc_schpf", "bc_makeup", "bc_punch"]; }
+console.log("PASS: BUS COMP overview values fit their cells");
