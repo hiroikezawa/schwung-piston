@@ -31,7 +31,15 @@ class Noise:
         return self.s / 0x3FFFFFFF - 1.0
 
 
-def sweep_kick(seconds, f_end, f_sweep, tau_sweep, f_slow, tau_slow, t60, attack=0.0003):
+# Every kick settles on A1 or C1, whichever is nearer its original pitch;
+# the whole sweep is transposed with it (the shape and timing stay).
+A1, C1 = 55.0, 32.703
+
+
+def sweep_kick(seconds, f_end, f_sweep, tau_sweep, f_slow, tau_slow, t60, attack=0.0003, settle=None):
+    if settle is not None:
+        r = settle / f_end
+        f_end, f_sweep, f_slow = settle, f_sweep * r, f_slow * r
     out, ph = [], 0.0
     k = 6.9078 / t60
     for i in range(int(seconds * SR)):
@@ -45,7 +53,7 @@ def sweep_kick(seconds, f_end, f_sweep, tau_sweep, f_slow, tau_slow, t60, attack
 
 def punch():
     n = Noise(1)
-    body = sweep_kick(0.45, 52, 130, 0.012, 22, 0.06, 0.32)
+    body = sweep_kick(0.45, 52, 130, 0.012, 22, 0.06, 0.32, settle=A1)      # was 52 Hz
     out, prev = [], 0.0
     for i, b in enumerate(body):
         t = i / SR
@@ -58,7 +66,7 @@ def punch():
 
 def sub():
     n = Noise(2)
-    body = sweep_kick(1.3, 42, 26, 0.045, 14, 0.12, 1.25, attack=0.001)
+    body = sweep_kick(1.3, 42, 26, 0.045, 14, 0.12, 1.25, attack=0.001, settle=C1)   # was 42 Hz
     out, lp = [], 0.0
     for i, b in enumerate(body):
         t = i / SR
@@ -68,7 +76,7 @@ def sub():
 
 
 def crush():
-    body = sweep_kick(0.4, 56, 160, 0.010, 30, 0.05, 0.26)
+    body = sweep_kick(0.4, 56, 160, 0.010, 30, 0.05, 0.26, settle=A1)       # was 56 Hz
     out, held = [], 0.0
     for i, b in enumerate(body):
         if i % 4 == 0:                        # 11025 Hz sample-and-hold
@@ -78,7 +86,7 @@ def crush():
 
 
 def hard():
-    body = sweep_kick(0.5, 55, 245, 0.025, 40, 0.08, 0.38)
+    body = sweep_kick(0.5, 55, 245, 0.025, 40, 0.08, 0.38, settle=A1)       # already A1
     out, lp = [], 0.0
     a = 1 - math.exp(-2 * math.pi * 5000 / SR)
     for b in body:

@@ -716,8 +716,11 @@ static groove_stats groove(int model, int param, float value, int kick_only, int
 static void test_fx_levels(void) {
     for (int m = 0; m < 3; ++m) {
         groove_stats d0 = groove(m, P_K_DRIVE, 0.0f, 1, 0), d1 = groove(m, P_K_DRIVE, 1.0f, 1, 0);
-        if (!(d1.rms - d0.rms > -5.0 && d1.rms - d0.rms < 7.0)) fprintf(stderr, "drive m%d %.1f -> %.1f\n", m, d0.rms, d1.rms);
-        assert(d1.rms - d0.rms > -5.0 && d1.rms - d0.rms < 7.0);   /* DRIVE: dirtier, not a boost */
+        if (!(d1.rms - d0.rms > -6.0 && d1.rms - d0.rms < 7.0)) fprintf(stderr, "drive m%d %.1f -> %.1f\n", m, d0.rms, d1.rms);
+        /* DRIVE: dirtier, not a boost. Since 0.9.0 the default groove's 909
+         * and its PUNCH layer are both on A1, so they sum in phase and DRIVE
+         * takes 5.2 dB off it (was 3.0 dB while PUNCH sat at 52 Hz). */
+        assert(d1.rms - d0.rms > -6.0 && d1.rms - d0.rms < 7.0);
         /* COMP: a punch comp -- the attack passes, the body and the tail
          * come down, so more COMP is a tighter, SHORTER kick, never longer. */
         groove_stats c0 = groove(m, P_K_COMP, 0.0f, 1, 0), c1 = groove(m, P_K_COMP, 1.0f, 1, 0);
@@ -831,7 +834,7 @@ static void test_page2_fx(void) {
                FXR.rms - rms0, FXR.sub - sub0, peak0, FXR.peak);
         fflush(stdout);
         assert(FXR.rms - rms0 > 3.0 && FXR.sub - sub0 > 3.0);
-        assert(FXR.peak < peak0 * 1.25 && FXR.peak <= HKH_CEILING + 1e-6);
+        assert(FXR.peak < peak0 * 1.3 && FXR.peak <= HKH_CEILING + 1e-6);   /* 909: 1.25x since 0.9.0 */
     }
     /* HARMONICS: adds energy where it was asked to */
     fx_render(KICK_909, 0, 1, NULL, NULL, 0);

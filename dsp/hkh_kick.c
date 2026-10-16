@@ -20,9 +20,12 @@ typedef struct {
     float gain;
 } kick_model;
 
+/* Every model settles on A1 (55 Hz); the sweep depths are ratios, so the
+ * whole dive moves with it. 808: Roland's service manual tunes the bass
+ * drum to 56 Hz (was 49 Hz, the value its parts calculate to). IND was 45. */
 static const kick_model MODELS[3] = {
     [M808] = {
-        .base_hz = 49.0f, .p1_depth = 1.3f, .p1_ms = 30.0f, .p2_depth = 0.15f, .p2_ms = 120.0f,
+        .base_hz = 55.0f, .p1_depth = 1.3f, .p1_ms = 30.0f, .p2_depth = 0.15f, .p2_ms = 120.0f,
         .t60_min = 0.22f, .t60_max = 2.6f, .attack_ms = 0.8f, .hold_ms = 7.0f,
         .click_level = 0.22f, .click_ms = 1.2f, .click_hz = 1800.0f, .click_q = 0.7f,
         .pulse_level = 0.0f, .pulse_ms = 0.0f,
@@ -38,7 +41,7 @@ static const kick_model MODELS[3] = {
         .gain = 0.76f,
     },
     [MIND] = {
-        .base_hz = 45.0f, .p1_depth = 8.0f, .p1_ms = 6.0f, .p2_depth = 1.0f, .p2_ms = 85.0f,
+        .base_hz = 55.0f, .p1_depth = 8.0f, .p1_ms = 6.0f, .p2_depth = 1.0f, .p2_ms = 85.0f,
         .t60_min = 0.08f, .t60_max = 1.8f, .attack_ms = 0.1f, .hold_ms = 3.0f,
         .click_level = 0.55f, .click_ms = 2.5f, .click_hz = 2400.0f, .click_q = 1.2f,
         .pulse_level = 0.6f, .pulse_ms = 0.6f,
