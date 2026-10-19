@@ -68,12 +68,12 @@ function mockDsp() {
     return d;
 }
 
-function rig() {
+function rig(files0 = {}) {
     const dsp = mockDsp();
     const r = {
         dsp, sets: [], leds: {}, ledLog: [], padBlock: [], on: true, t: 1000,
         snapshot: Object.fromEntries(Array.from({ length: 32 }, (_, i) => [String(68 + i), 45])),
-        ledFail: new Set(), printed: [], files: {}, hostShift: false,
+        ledFail: new Set(), printed: [], files: { ...files0 }, hostShift: false,
     };
     r.host = {
         setParam: (k, v) => { r.sets.push([k, v]); dsp.set(k, v); return true; },
@@ -432,8 +432,7 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
     assert(parsePresets(r.files[PRESET_FILE])[1][0]);
     assert(parsePresets(r.files[PRESET_FILE])[0][2], "kick preset kept");
     /* A fresh UI reads them back from the file. */
-    const r2 = rig();
-    r2.files = r.files;
+    const r2 = rig(r.files);
     r2.tick();
     r2.clear();
     r2.tap(noteAt(1, 2));
@@ -585,3 +584,19 @@ for (const key of FX_KNOBS_FOR_TEST()) {
 }
 function FX_KNOBS_FOR_TEST() { return ["bc_thresh", "bc_ratio", "bc_attack", "bc_release", "bc_schpf", "bc_makeup", "bc_punch"]; }
 console.log("PASS: BUS COMP overview values fit their cells");
+
+/* ---- saved presets light up as soon as the screen opens -------------------- */
+{
+    const saved = { [PRESET_FILE]: JSON.stringify({ kick: ["1,3,4369,1,0.28,0.09,0.15,0.41,0,0.21", null, "2,3,4369,1,0.59,0.39,0.2,0.59,0,0.15", null, null, null, null, null],
+                                                     hat: [null, "1,17476,0.7,0.5,0,0.1,0.2,0.5,0," + Array(16).fill(-1).join(","), null, null, null, null, null, null] }) };
+    const r = rig(saved);
+    r.tick();
+    assert.equal(r.leds[noteAt(1, 0)], C.KICK_DIM, "kick preset 1 is lit before any preset pad is touched");
+    assert.equal(r.leds[noteAt(1, 1)], C.OFF, "kick preset 2 is empty");
+    assert.equal(r.leds[noteAt(1, 2)], C.KICK_DIM, "kick preset 3 is lit");
+    r.page();                                     /* -> HAT */
+    r.tick();
+    assert.equal(r.leds[noteAt(1, 1)], C.HAT_DIM, "hat preset 2 is lit");
+    assert.equal(r.leds[noteAt(1, 0)], C.OFF);
+    console.log("PASS: saved presets are lit from the first frame");
+}

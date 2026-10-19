@@ -1071,6 +1071,9 @@ export function createUi(host) {
     /* ---- lifecycle ---- */
     function init() {
         refresh();
+        /* the saved presets light row 2 from the first frame, not only after
+         * the first preset pad is pressed */
+        loadPresets();
         ledCache = {};
         wasOn = false;
         dirty = true;
