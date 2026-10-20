@@ -26,7 +26,7 @@
       "lines": [
         "Row 1 pads 6-7.",
         "KICK: ANALOG, DIGITAL",
-        "  hold + step 1-4",
+        "  hold + step 1-5",
         "HAT: MODEL (hold),",
         "  OFFBEAT"
       ]
@@ -131,7 +131,7 @@
       "lines": [
         "Digital kicks: own WAVs",
         "UserLibrary/Samples/",
-        "Piston/kick1..4.wav",
+        "Piston/kick1..5.wav",
         "Restart Move after",
         "adding or updating."
       ]

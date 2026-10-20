@@ -1,9 +1,9 @@
-/* Piston - the four DIGITAL kick slots. MIT.
+/* Piston - the five DIGITAL kick slots. MIT.
  *
  * Every slot always has a sound: a kick rendered into the binary at build
  * time (scripts/gen_digital_kicks.py). A user WAV replaces it when present:
  *
- *   /data/UserData/UserLibrary/Samples/Piston/kick1.wav .. kick4.wav
+ *   /data/UserData/UserLibrary/Samples/Piston/kick1.wav .. kick5.wav
  *   (then <module dir>/samples/kickN.wav as a fallback)
  *
  * Files are read ONCE per instance by a worker thread that demotes itself to
@@ -19,7 +19,7 @@
 #include <stdint.h>
 #include "hkh_digital.h"
 
-#define HKH_SAMPLE_SLOTS 4
+#define HKH_SAMPLE_SLOTS 5
 #define HKH_USER_MAX_SAMPLES (44100 * 2)          /* 2 s per slot */
 #define HKH_USER_DIR "/data/UserData/UserLibrary/Samples/Piston"
 

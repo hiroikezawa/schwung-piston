@@ -344,7 +344,7 @@ static void test_kick_retrigger(void) {
 
 /* ---- digital kick, A/D mix and the WAV loader (phase 3) -------------------- */
 static void test_default_samples(void) {
-    for (int i = 0; i < 4; ++i) {
+    for (int i = 0; i < HKH_SAMPLE_SLOTS; ++i) {
         hkh_sample_ref r = hkh_default_sample(i);
         assert(r.data && r.len > 8000 && r.len <= 44100 * 2);
         int peak = 0;
@@ -360,7 +360,7 @@ static void test_default_samples(void) {
         for (int k = 0; k < i; ++k) assert(hkh_default_sample(k).len != r.len || memcmp(
             hkh_default_sample(k).data, r.data, 2000) != 0);
     }
-    printf("PASS: four built-in digital kicks, loudness-matched, faded\n");
+    printf("PASS: five built-in digital kicks, loudness-matched, faded\n");
 }
 
 static double kick_energy(float mix, int model, int sample) {
@@ -406,18 +406,18 @@ static void test_mix(void) {
 
 static void test_digital_switch(void) {
     static hkh_digital d;
-    for (int a = 0; a < 4; ++a) {
+    for (int a = 0; a < HKH_SAMPLE_SLOTS; ++a) {
         hkh_digital_init(&d);
         hkh_digital_trigger(&d, hkh_default_sample(a), 1.0f);
         float prev = 0, worst = 0;
         for (int i = 0; i < 20000; ++i) {
-            if (i == 3000) hkh_digital_trigger(&d, hkh_default_sample((a + 1) % 4), 1.0f);
+            if (i == 3000) hkh_digital_trigger(&d, hkh_default_sample((a + 1) % HKH_SAMPLE_SLOTS), 1.0f);
             float x = hkh_digital_tick(&d);
             if (i >= 3000 && i < 3200) worst = fmaxf(worst, fabsf(x - prev));
             prev = x;
         }
         /* The switch is no sharper than the new sample's own attack. */
-        hkh_sample_ref r = hkh_default_sample((a + 1) % 4);
+        hkh_sample_ref r = hkh_default_sample((a + 1) % HKH_SAMPLE_SLOTS);
         float own = 0;
         for (int i = 1; i < 200; ++i) own = fmaxf(own, (float)abs(r.data[i] - r.data[i - 1]) / 32768.0f);
         own = fmaxf(own, (float)abs(r.data[0]) / 32768.0f);

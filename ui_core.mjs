@@ -137,10 +137,10 @@ const ENUM_TICKS = 10;         /* encoder counts per choice on an option knob */
 
 export const KICK_MODELS = ["808", "909", "IND"];
 /* The four built-in digital kicks (scripts/gen_digital_kicks.py); a slot
- * holding the user's own WAV shows as USR1-4 instead. */
-export const DIGITAL_NAMES = ["PUNCH", "SUB", "CRUSH", "HARD"];
+ * holding the user's own WAV shows as USR1-5 instead. */
+export const DIGITAL_NAMES = ["PUNCH", "SUB", "CRUSH", "HARD", "GABBER"];
 export function digitalName(s, i) {
-    if (i < 0 || i > 3) return "?";
+    if (i < 0 || i >= DIGITAL_NAMES.length) return "?";
     return ((s.userMask >> i) & 1) ? `USR${i + 1}` : DIGITAL_NAMES[i];
 }
 export const HAT_MODELS = ["808", "909", "METAL", "INDUS"];
@@ -948,15 +948,18 @@ export function createUi(host) {
         } else if (ui.sel) {
             /* A picker is held: the choices, big, the current one inverted. */
             const pick = PICKERS[ui.sel];
-            const names = ui.sel === "digital" ? [0, 1, 2, 3].map((i) => digitalName(s, i)) : pick.names;
+            const names = ui.sel === "digital" ? DIGITAL_NAMES.map((_, i) => digitalName(s, i)) : pick.names;
             const cur = s[pick.field];
-            g.print(0, 38, pick.title, 1);
             const w = Math.floor(128 / names.length);
+            /* A box too narrow for its names (five digital kicks: 25 px)
+             * numbers the boxes and names the current one in the title. */
+            const numbered = names.some((n) => tw(n) > w - 3);
+            g.print(0, 38, numbered ? `${pick.title}: ${names[cur] || "?"}` : pick.title, 1);
             names.forEach((name, i) => {
-                const x = i * w;
+                const x = i * w, label = numbered ? String(i + 1) : name;
                 if (i === cur) g.fillRect(x, 48, w - 1, 13, 1);
                 else g.drawRect(x, 48, w - 1, 13, 1);
-                g.print(x + Math.max(1, Math.floor((w - 1 - tw(name)) / 2)), 51, name, i === cur ? 0 : 1);
+                g.print(x + Math.max(1, Math.floor((w - 1 - tw(label)) / 2)), 51, label, i === cur ? 0 : 1);
             });
         } else if (bigKnob >= 0) {
             /* The touched knob, big: name, value, bar. */
