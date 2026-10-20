@@ -32,7 +32,7 @@ export function noteAt(row, col) { return ROW_BASE[row] + col; }
  * RACK is drawn by rackLeds below. */
 export const TOP_ROWS = [
     ["mute", "reset", "shuffle", "random", "fill", "analog", "digital", null],   /* KICK */
-    ["mute", "reset", "shuffle", "random", "fill", "model", "offbeat", null],    /* HAT */
+    ["mute", "reset", "shuffle", "random", "fill", "model", "offbeat", "rec"],   /* HAT */
 ];
 export const PRESETS = 8;
 
@@ -77,17 +77,19 @@ export const MODES = 3;
 /* Knob 1-8 in each mode. DECAY is knob 3 in both. Knob 8 is reserved. */
 export const KNOBS = [
     ["k_vol", "k_mix", "k_decay", "k_drive", "k_comp", "k_rumble", "k_verb", null],
-    ["h_vol", "h_color", "h_decay", "h_drive", "h_comp", "h_filter", "h_verb", null],
+    ["h_vol", "h_color", "h_decay", "h_drive", "h_comp", "h_filter", null, null],   /* no hat reverb */
 ];
 export const KNOB_LABELS = [
     ["VOL", "MIX", "DEC", "DRV", "CMP", "RMB", "VRB", "PAGE"],
-    ["VOL", "MTL", "DEC", "DRV", "CMP", "FLT", "VRB", "PAGE"],
+    ["VOL", "MTL", "DEC", "DRV", "CMP", "FLT", "-", "PAGE"],
 ];
 export const KNOB_NAMES = [
     ["VOLUME", "ANALOG/DIGITAL", "DECAY", "DRIVE", "COMP", "RUMBLE", "REVERB", "PAGE"],
-    ["VOLUME", "COLOR/METAL", "DECAY", "DRIVE", "COMP", "FILTER", "REVERB", "PAGE"],
+    ["VOLUME", "COLOR/METAL", "DECAY", "DRIVE", "COMP", "FILTER", "-", "PAGE"],
 ];
-export const PARAM_KEYS = [...KNOBS[0].slice(0, 7), ...KNOBS[1].slice(0, 7)];
+/* The DSP's 14 params in its order; h_verb stays a (now silent) param so
+ * saved states keep their shape. */
+export const PARAM_KEYS = [...KNOBS[0].slice(0, 7), ...KNOBS[1].slice(0, 6), "h_verb"];
 
 /* Page 2 (turn the jog): each part's effect page, in real units -- the
  * order of dsp/hkh_busfx.h. KICK FX = TUBE on the kick only, HAT FX =
@@ -290,6 +292,8 @@ export function computeLeds(s, ui) {
     if (hat) {
         put(0, 5, ui.sel === "model" ? C.MODEL : C.MODEL_DIM);
         put(0, 6, pressed(0, 6) ? C.OFFBEAT : C.OFFBEAT_DIM);
+        /* REC: armed = DECAY touch records motion; white while recording */
+        put(0, 7, s.rec ? C.WHITE : ui.recArm ? C.MUTED : C.KICK_FAINT);
     } else {
         put(0, 5, ui.sel === "analog" ? C.ANALOG : C.ANALOG_DIM);
         put(0, 6, ui.sel === "digital" ? C.DIGITAL : C.DIGITAL_DIM);
@@ -410,7 +414,7 @@ const REASSERT_EVERY_TICKS = 6;    /* one row of our LEDs re-sent round-robin */
  */
 export function createUi(host) {
     let s = defaultState();
-    const ui = { held: new Set(), sel: null, presets: null, preset: [-1, -1], rackHeld: -1 };
+    const ui = { held: new Set(), sel: null, presets: null, preset: [-1, -1], rackHeld: -1, recArm: false };
     let shiftHeld = false;
     let lastPageTurn = -1e9;
     let pageAcc = 0;
@@ -638,6 +642,12 @@ export function createUi(host) {
             }
             if (!down) return;
             switch (role) {
+            case "rec":
+                /* arm / disarm DECAY motion recording; disarming ends a take */
+                ui.recArm = !ui.recArm;
+                if (!ui.recArm) stopRecording();
+                say(ui.recArm ? "REC ARMED (TOUCH DECAY)" : "REC OFF");
+                break;
             case "mute": {
                 const on = hat ? !s.hmute : !s.kmute;
                 set(prefix + "mute", on ? 1 : 0);
@@ -824,9 +834,10 @@ export function createUi(host) {
             touched = knob;
             lastTouchKnob = knob;
             touchShowUntil = now + TOUCH_SHOW_MS;
-            if (s.mode === MODE_HAT && knob === DECAY_KNOB && !recHeld) {
-                /* Touch IS the record button: DECAY motion is captured for
-                 * exactly as long as the finger is on the knob. */
+            if (s.mode === MODE_HAT && knob === DECAY_KNOB && !recHeld && ui.recArm) {
+                /* With REC armed (top-right pad), touch IS the record button:
+                 * DECAY motion is captured for exactly as long as the finger
+                 * is on the knob. Disarmed, DECAY just sets the base. */
                 recHeld = true;
                 lastHeartbeat = now;
                 set("h_motion_rec", 1);

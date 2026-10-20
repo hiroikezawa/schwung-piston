@@ -749,8 +749,9 @@ static void test_fx_levels(void) {
         assert(v1 - v0 > 1.5);
     }
     groove_stats h0 = groove(0, P_H_VERB, 0.0f, 0, 1), h1 = groove(0, P_H_VERB, 1.0f, 0, 1);
-    if (!(h1.between - h0.between > 3.0)) fprintf(stderr, "hverb %.1f -> %.1f\n", h0.between, h1.between);
-    assert(h1.between - h0.between > 3.0);
+    /* the hat has no reverb since 0.9.2: h_verb is accepted and ignored */
+    if (!(fabs(h1.between - h0.between) < 0.01)) fprintf(stderr, "hverb %.2f -> %.2f\n", h0.between, h1.between);
+    assert(fabs(h1.between - h0.between) < 0.01 && fabs(h1.rms - h0.rms) < 0.01);
     groove_stats hd0 = groove(0, P_H_DRIVE, 0.0f, 0, 1), hd1 = groove(0, P_H_DRIVE, 1.0f, 0, 1);
     assert(hd1.rms - hd0.rms > -3.0 && hd1.rms - hd0.rms < 6.0);
     groove_stats hc0 = groove(0, P_H_COMP, 0.0f, 0, 1), hc1 = groove(0, P_H_COMP, 1.0f, 0, 1);

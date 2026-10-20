@@ -323,6 +323,14 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
     assert(!r.keys().includes("h_motion_rec"));
     r.page();
     r.clear();
+    r.touch(2, true); r.touch(2, false);           /* HAT, REC not armed: no recording */
+    assert(!r.keys().includes("h_motion_rec"), "disarmed DECAY touch only edits");
+    r.tick();
+    assert.equal(r.leds[noteAt(0, 7)], C.KICK_FAINT, "REC pad dark while disarmed");
+    r.tap(noteAt(0, 7));                           /* arm REC (top-right pad) */
+    r.tick();
+    assert.equal(r.leds[noteAt(0, 7)], C.MUTED, "REC pad red while armed");
+    r.clear();
     r.touch(2, true);
     assert.deepEqual(r.last(), ["h_motion_rec", "1"]);
     r.turn(2, 10);
@@ -330,6 +338,13 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
     const k = r.keys();
     assert.equal(k[k.length - 2], "h_decay");
     assert.deepEqual(r.last(), ["h_motion_rec", "0"]);
+    r.touch(2, true);
+    assert(r.ui.recording);
+    r.tap(noteAt(0, 7));                /* disarm mid-take: the take ends */
+    assert(!r.ui.recording);
+    assert.deepEqual(r.last(), ["h_motion_rec", "0"]);
+    r.touch(2, false);
+    r.tap(noteAt(0, 7));                /* armed again */
     r.touch(2, true);
     r.page();                           /* switch away mid-touch */
     assert(!r.ui.recording);
@@ -393,9 +408,12 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
     r.tick();
     assert(r.printed.includes("HAT MODEL") && r.printed.includes("METAL"));
     r.release(noteAt(0, 5));
+    r.tap(noteAt(0, 7));          /* arm REC */
+    r.t += 1300;                  /* past the "REC ARMED" message */
     r.touch(2, true);
     r.tick(2);
     assert(r.printed.includes("REC"));
+    r.tap(noteAt(0, 7));          /* disarm again */
     r.touch(2, false);
     r.page(-1);                   /* HAT -> KICK */
     r.touch(5, true);

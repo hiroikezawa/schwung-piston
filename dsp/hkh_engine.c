@@ -38,11 +38,10 @@ static float hat_vol_gain(float v) { return 8.0f * v * v; }
  * the body come up -- loud next to a compressed, rumbling kick. */
 #define HAT_CEILING 0.85f
 #define KICK_CEILING 0.8f
-/* REVERB sends: squared, so the first half of the knob is subtle. The kick's
+/* REVERB send (kick only since 0.9.2): squared, so the first half of the knob is subtle. The kick's
  * send is highpassed at 180 Hz inside the reverb (the lows are RUMBLE's), so
  * it needs more level to be heard. */
 static float kick_send_gain(float v) { return 3.0f * v * v; }
-static float hat_send_gain(float v) { return 0.9f * v * v; }
 
 /* Rack pad volume: squared taper, unity at full. Samples keep their own
  * level (only peaks above 0.95 are scaled down at load). */
@@ -86,7 +85,7 @@ static void voices_init(hkh_engine *e) {
     v->kvol = kick_vol_gain(e->param[P_K_VOL]);
     v->hvol = hat_vol_gain(e->param[P_H_VOL]);
     v->ksend = kick_send_gain(e->param[P_K_VERB]);
-    v->hsend = hat_send_gain(e->param[P_H_VERB]);
+    v->hsend = 0.0f;                    /* the hat has no reverb since 0.9.2 */
 }
 
 static hkh_sample_ref kick_sample(hkh_engine *e) {
@@ -137,7 +136,7 @@ static void voices_block(hkh_engine *e, int frames) {
     v->kvol_step = (kick_vol_gain(e->param[P_K_VOL]) - v->kvol) * BLOCK_SMOOTH / f;
     v->hvol_step = (hat_vol_gain(e->param[P_H_VOL]) - v->hvol) * BLOCK_SMOOTH / f;
     v->ksend_step = (kick_send_gain(e->param[P_K_VERB]) - v->ksend) * BLOCK_SMOOTH / f;
-    v->hsend_step = (hat_send_gain(e->param[P_H_VERB]) - v->hsend) * BLOCK_SMOOTH / f;
+    v->hsend_step = (0.0f - v->hsend) * BLOCK_SMOOTH / f;   /* h_verb is ignored */
 }
 /* True when nothing can make a sound this block: no voice ringing, both
  * send effects parked, the output already settled to zero. The keepalive

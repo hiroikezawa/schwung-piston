@@ -84,7 +84,7 @@
         "1 VOL 2 MIX/METAL",
         "3 DECAY 4 DRIVE 5 COMP",
         "6 RUMBLE / FILTER",
-        "7 REVERB  8 PAGE",
+        "7 REVERB (kick) 8 PAGE",
         "Touch = big readout"
       ]
     },
@@ -118,7 +118,8 @@
     {
       "title": "Hat decay motion",
       "lines": [
-        "HAT surface, touch k3:",
+        "Top-right pad: REC",
+        "REC on + touch k3:",
         "records DECAY per step",
         "while your finger is on.",
         "Blue step = open hat.",
