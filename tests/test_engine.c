@@ -254,7 +254,7 @@ static void test_auditions(void) {
 #define KN 220500
 static float KB[KN];
 
-typedef struct { float peak, t40, attack_hf, body_hf, rms; } kick_stats;
+typedef struct { float peak, t40, attack_hf, body_hf, tail_hf, rms; } kick_stats;
 
 static kick_stats kick_measure(int model, float decay) {
     static hkh_akick k;
@@ -272,6 +272,9 @@ static kick_stats kick_measure(int model, float decay) {
     for (int i = 1; i < 221; ++i) { e += KB[i] * KB[i]; double d = KB[i] - KB[i - 1]; hf += d * d; }
     for (int i = 882; i < 2646; ++i) { eb += KB[i] * KB[i]; double d = KB[i] - KB[i - 1]; hb += d * d; }
     for (int i = 0; i < 13230; ++i) r += KB[i] * KB[i];
+    double et = 0, ht = 0;                         /* the tail, 100-300 ms: edges */
+    for (int i = 4410; i < 13230; ++i) { et += KB[i] * KB[i]; double d = KB[i] - 2 * KB[i - 1] + KB[i - 2]; ht += d * d; }
+    st.tail_hf = (float)(ht / (et + 1e-12));
     st.attack_hf = (float)(hf / (e + 1e-12));
     st.body_hf = (float)(hb / (eb + 1e-12));
     st.rms = (float)sqrt(r / 13230);
@@ -302,6 +305,9 @@ static void test_kick_models(void) {
     /* and IND's body is harmonic-rich where the others are near-sine. */
     assert(s[KICK_IND][1].body_hf > 20.0f * s[KICK_909][1].body_hf);
     assert(s[KICK_IND][1].body_hf > 20.0f * s[KICK_808][1].body_hf);
+    /* but only at the attack: a long IND rings out round, not as a hard
+     * square (0.9.4: ~7x the 808's edges; ~190x before the grit faded). */
+    assert(s[KICK_IND][2].tail_hf < 20.0f * s[KICK_808][2].tail_hf);
     /* Balanced loudness: no model is more than ~4 dB off another. */
     for (int a = 0; a < 3; ++a)
         for (int b = 0; b < 3; ++b)

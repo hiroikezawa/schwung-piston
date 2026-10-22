@@ -53,6 +53,12 @@ static const kick_model MODELS[3] = {
     },
 };
 
+/* IND's grit (FM, fold, asymmetric clip) belongs to the attack. It holds
+ * for GRIT_HOLD_MS, then fades with GRIT_MS, so a long DECAY rings out as a
+ * round body instead of a sustained, hard-edged square. */
+#define GRIT_HOLD_MS 25.0f
+#define GRIT_MS 25.0f
+
 static float ms_coef(float ms) {           /* e^-1 per `ms` */
     return ms > 0.0f ? expf(-1.0f / (ms * 0.001f * HKH_SR)) : 0.0f;
 }
@@ -103,6 +109,7 @@ void hkh_akick_trigger(hkh_akick *k, int model, float velocity, float decay) {
     v->shape_norm = 1.0f / hkh_tanh(m->shape);
     v->neg_drive = 1.4f + 4.0f * m->asym;
     v->neg_norm = 1.0f / hkh_tanh(v->neg_drive);
+    v->grit = 1.0f; v->grit_c = ms_coef(GRIT_MS);
 }
 
 void hkh_akick_block(hkh_akick *k, float decay) {
@@ -167,9 +174,9 @@ static float voice_tick(hkh_akick *k, hkh_kick_voice *v) {
     if (v->model == MIND) {
         float mod = hkh_sin_turns(v->mphase);
         v->mphase = hkh_wrap01(v->mphase + inc * m->fm_ratio);
-        float idx = m->fm_index * v->senv + 0.15f;
+        float idx = (m->fm_index * v->senv + 0.15f) * v->grit;
         body = hkh_sin_turns(v->phase + idx * mod * (1.0f / HKH_TWO_PI));
-        float fold = 1.0f + m->fold * v->genv;
+        float fold = 1.0f + m->fold * v->genv * v->grit;
         body = hkh_sin_turns(0.25f * fold * body);
     } else if (v->model == M909) {
         float tri = 4.0f * fabsf(v->phase - 0.5f) - 1.0f;   /* triangle, -1..1 */
@@ -214,8 +221,12 @@ static float voice_tick(hkh_akick *k, hkh_kick_voice *v) {
         /* Asymmetric saturation inside the voice: the two polarities bend
          * with different curvature (even harmonics, grit), each bounded to
          * +-1 so the model cannot out-shout the others. */
-        out = out >= 0.0f ? hkh_tanh(1.4f * out) * 1.1010260f        /* 1 / hkh_tanh(1.4) */
-                          : hkh_tanh(v->neg_drive * out) * v->neg_norm;
+        float pos = hkh_tanh(1.4f * out) * 1.1010260f;              /* 1 / hkh_tanh(1.4) */
+        float sat = out >= 0.0f ? pos : hkh_tanh(v->neg_drive * out) * v->neg_norm;
+        /* As the grit fades, both halves bend alike: the tail is the
+         * positive half's gentle curve, like the 808's body. */
+        out = pos + (sat - pos) * v->grit;
+        if (v->age >= (int)(GRIT_HOLD_MS * 0.001f * HKH_SR)) v->grit *= v->grit_c;
     }
 
     ++v->age;

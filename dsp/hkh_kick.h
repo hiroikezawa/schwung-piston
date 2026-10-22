@@ -38,6 +38,7 @@ typedef struct {
     float decay;             /* DECAY latched for this hit, eased per block */
     float shape_norm;        /* 1 / tanh(body drive), refreshed per block */
     float neg_drive, neg_norm; /* IND: the negative half's saturator */
+    float grit, grit_c;      /* IND: how much of the attack's grit is left, 1 -> 0 */
     hkh_svf click_f, ring1, ring2;
 } hkh_kick_voice;
 
