@@ -6,7 +6,7 @@ import {
     lpfLabel, fxCellText,
     createUi, padAt, noteAt, computeLeds, parseUiState, defaultState, knobStep, C,
     MODE_HAT, MODE_RACK, PARAM_KEYS, stepPad, padStep, PRESET_FILE, parsePresets,
-    rackPadAt, rackStepPad, rackPadStep, PAGE_TICKS, FX_KEYS, FX_DEFS,
+    rackPadAt, rackStepPad, rackPadStep, PAGE_TICKS, FX_KEYS, FX_DEFS, SUB_KEYS,
 } from "../ui_core.mjs";
 
 /* ---- a mock DSP that speaks the same keys as dsp/hkh_plugin.c ------------- */
@@ -20,10 +20,12 @@ function mockDsp() {
         rackMask: 0xFFFFFFFF & ~(1 << 4), rackMute: 0, rp: new Array(32).fill(0), rv: new Array(32).fill(0.8), rfb: 0, rsc: 0,
         rds: new Array(32).fill(1), rrs: new Array(32).fill(0), rcs: new Array(32).fill(0), rms: new Array(32).fill(0), rlp: new Array(32).fill(1),
         fx: Object.fromEntries(FX_KEYS.map((k) => [k, FX_DEFS[k].def])), gr: 0, lim: 0,
+        sub: Object.fromEntries(SUB_KEYS.map((k, i) => [k, [0, 1, 0, 0.5, 0.7, 0.572, 0.25, 0.15, 0.4, 0.5][i]])),
     };
     d.set = (key, value) => {
         const v = Number(value);
         if (key in d.fx) { d.fx[key] = v; return; }
+        if (key in d.sub) { d.sub[key] = v; return; }
         if (key in d.params) { d.params[key] = v; if (key === "h_decay" && d.rec && d.running) d.motion[d.step] = v; return; }
         switch (key) {
         case "k_step": d.kp ^= 1 << v; break;
@@ -64,7 +66,8 @@ function mockDsp() {
         ...FX_KEYS.map((k) => Math.round(d.fx[k] * 10)), Math.round(d.gr * 10), d.lim,
         ...d.rds.map((x) => Math.round(x * 1000)), ...d.rrs.map((x) => Math.round(x * 1000)),
         ...d.rcs.map((x) => Math.round(x * 1000)), ...d.rms.map((x) => Math.round(x * 1000)),
-        ...d.rlp.map((x) => Math.round(x * 1000))].join(",");
+        ...d.rlp.map((x) => Math.round(x * 1000)),
+        ...SUB_KEYS.map((k, i) => (i < 3 ? d.sub[k] : Math.round(d.sub[k] * 1000)))].join(",");
     return d;
 }
 
@@ -159,7 +162,7 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
 {
     const r = rig();
     r.tick();
-    assert.equal(r.leds[noteAt(0, 7)], C.OFF, "top-right pad is free now");
+    assert.equal(r.leds[noteAt(0, 7)], C.SUB_DIM, "top-right pad = PISTON SUB, OFF");
     assert.equal(r.leds[noteAt(3, 0)], C.KICK, "kick step 1 on the bottom row");
     assert.equal(r.leds[noteAt(3, 2)], C.OFF);
     for (let c = 0; c < 8; c++) assert.equal(r.leds[noteAt(2, c)], C.OFF, "row 3 unused at 8 steps");
@@ -231,13 +234,18 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
     assert.deepEqual(r.sets, []);
     r.jog(1);
     r.tick();
-    assert(r.printed.includes("KICK FX"));
+    assert(r.printed.includes("PISTON SUB"), "KICK page 2 is PISTON SUB");
+    r.jog(1);
+    r.tick();
+    assert(r.printed.includes("KICK FX"), "KICK page 3 is the TUBE");
     assert(r.printed.includes("STEPS 8  click: 8/16"));
+    r.jog(1); r.tick();
+    assert(r.printed.includes("KICK FX"), "page 3 is the last");
     r.click();
     assert.deepEqual(r.sets, [["length", "16"]]);
-    r.jog(-1);
+    r.jog(-1); r.jog(-1);
     r.tick(4);
-    assert(!r.printed.includes("KICK FX"), "back to the play page");
+    assert(!r.printed.includes("KICK FX") && !r.printed.includes("PISTON SUB"), "back to the play page");
     assert.equal(r.ui.state.len, 16);
     /* 16 steps: row 3 = 1-8, row 4 = 9-16. */
     assert.equal(r.leds[noteAt(2, 0)], C.KICK, "step 1 top");
@@ -253,7 +261,7 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
 /* ---- page 2 (jog): KICK FX / HAT FX / BUS COMP knobs ------------------------ */
 {
     const r = rig();
-    r.jog(1); r.tick();
+    r.jog(1); r.jog(1); r.tick();
     assert(r.printed.includes("KICK FX") && r.printed.includes("SAT") && r.printed.includes("DRIVE"));
     r.clear();
     r.turn(0, 20); r.tick();                       /* SAT up, real units 0..1 */
@@ -591,6 +599,74 @@ assert(!/globalThis\.(init|tick)\s*=/.test(chain), "must not override the shadow
 const manifest = JSON.parse(fs.readFileSync(new URL("../module.json", import.meta.url), "utf8"));
 assert.equal(manifest.ui_chain, "ui_chain.js");
 assert.equal(manifest.capabilities.ui_hierarchy, undefined, "a hierarchy would replace the pad UI");
+
+/* ---- PISTON SUB: the top-right KICK pad and KICK page 2 ------------------- */
+{
+    const r = rig();
+    const SUBPAD = noteAt(0, 7);
+    /* tap = ON / OFF */
+    r.clear();
+    r.tap(SUBPAD); r.tick();
+    assert.deepEqual(r.sets, [["sub_on", "1"]]);
+    assert.equal(r.leds[SUBPAD], C.SUB, "ON: bright");
+    assert(r.printed.includes("SUB ON"));
+    /* hold + steps 1-3 = MODE, 5-6 = TRIGGER; releasing after a pick does not toggle */
+    r.clear();
+    r.press(SUBPAD); r.tick();
+    assert.equal(r.leds[SUBPAD], C.WHITE);
+    assert.equal(r.leds[stepPad(1, 8)], C.WHITE, "ANALOG is current");
+    assert.equal(r.leds[stepPad(0, 8)], C.SUB);
+    assert.equal(r.leds[stepPad(4, 8)], C.WHITE, "FOLLOW is current");
+    assert.equal(r.leds[stepPad(5, 8)], C.OFFBEAT);
+    assert.equal(r.leds[stepPad(3, 8)], C.OFF, "step 4 is not a choice");
+    for (const t of ["DEEP", "ANALOG", "DIRTY", "FOLLOW", "OFFBEAT"]) assert(r.printed.includes(t), t);
+    r.tap(stepPad(2, 8));
+    r.tap(stepPad(5, 8));
+    r.tap(stepPad(3, 8));                         /* not a choice: nothing */
+    r.release(SUBPAD); r.tick();
+    assert.deepEqual(r.sets, [["sub_mode", "2"], ["sub_trig", "1"]]);
+    assert(!r.keys().includes("k_step"), "a held SUB pad's steps are not kick steps");
+    assert.equal(r.dsp.sub.sub_on, 1, "still ON");
+    assert.equal(r.leds[stepPad(0, 8)], C.KICK, "steps are back");
+    /* page 2 = PISTON SUB: 7 knobs in real units, knob 8 still turns parts */
+    r.jog(1); r.tick();
+    assert(r.printed.includes("PISTON SUB") && r.printed.includes("ON"));
+    for (const l of ["LEVEL", "S/B", "DECAY", "DELAY", "DRIVE", "TONE", "DUCK"]) assert(r.printed.includes(l), l);
+    assert(r.printed.includes("70%") && r.printed.includes("350"), r.printed.join("|"));
+    assert(r.printed.includes("-"), "DELAY unused on OFFBEAT");
+    assert(r.printed.includes("DIRTY OFFBEAT"));
+    r.clear();
+    r.turn(0, 20); r.tick();
+    assert.equal(r.last()[0], "sub_level");
+    assert(Number(r.last()[1]) > 0.5);
+    for (let i = 0; i < 3; i++) r.turn(2, -127 + 64);   /* big CCW spins: DECAY 50 ms */
+    r.tick();
+    assert.equal(r.dsp.sub.sub_decay, 0);
+    r.touch(2, true); r.tick();
+    assert(r.printed.includes("50ms") && r.printed.includes("3 DECAY"));
+    r.touch(2, false);
+    assert(!r.keys().includes("k_decay") && !r.keys().includes("h_motion_rec"));
+    r.clear();
+    r.turn(7, 1); r.tick();                       /* knob 8: no knob of its own */
+    assert(!r.keys().some((k) => k.startsWith("sub_")));
+    /* the SUB pad works here too, and its choices replace the knobs */
+    r.press(SUBPAD); r.tick();
+    assert(r.printed.includes("DEEP") && !r.printed.includes("LEVEL"));
+    r.tap(stepPad(4, 8)); r.release(SUBPAD); r.tick();
+    assert.equal(r.dsp.sub.sub_trig, 0);
+    r.t += 2000; r.tick();
+    assert(r.printed.includes("25"), "FOLLOW: DELAY in ms again");
+    /* every cell fits its 31-pixel column (5 px a character here) */
+    r.dsp.sub.sub_bal = 1; r.dsp.sub.sub_decay = 1; r.dsp.sub.sub_delay = 1; r.tick(4);
+    for (const t of r.printed.slice(2, 16)) assert(t.length * 5 <= 31 || t.includes(" "), t);
+    /* knob 8 from the SUB page goes to the next part's effects page */
+    r.page(1); r.tick();
+    assert(r.printed.includes("HAT FX"));
+    /* the HAT has no SUB pad: its top-right pad is still REC */
+    assert.notEqual(r.leds[SUBPAD], C.SUB);
+    r.page(-1); r.tick();
+    assert(r.printed.includes("KICK FX"), "back on KICK: its effects page");
+}
 
 console.log("PASS: one voice per surface, selectors, jog 8/16 steps, FILL, DECAY touch, LEDs, screen hand-back");
 

@@ -8,6 +8,7 @@
         "KICK > HAT > RACK.",
         "Row 1: MUTE RESET SHUF",
         "  RAND FILL + 2 select",
+        "  + SUB / REC",
         "Row 2: 8 presets"
       ]
     },
@@ -17,8 +18,8 @@
         "8 steps: bottom row.",
         "16 steps: row 3 = 1-8,",
         "  row 4 = 9-16.",
-        "Jog to page 2, click",
-        "to switch 8 / 16."
+        "Jog to page 2 (or 3),",
+        "click: 8 / 16."
       ]
     },
     {
@@ -89,17 +90,44 @@
       ]
     },
     {
-      "title": "Page 2 FX",
+      "title": "PISTON SUB",
+      "lines": [
+        "KICK page 2 (jog).",
+        "Sub bass fired by",
+        "every kick. A0+A1.",
+        "",
+        "Top-right KICK pad:",
+        " tap = ON / OFF",
+        " hold + step 1-3 =",
+        " DEEP ANALOG DIRTY",
+        " hold + step 5-6 =",
+        " FOLLOW / OFFBEAT",
+        "",
+        "1 LEVEL 2 SUB/BODY",
+        "3 DECAY 50-1500ms",
+        "4 DELAY 0-100ms",
+        " (FOLLOW only)",
+        "5 DRIVE 6 TONE",
+        "7 DUCK (kick ducks it)",
+        "",
+        "OFFBEAT: half a beat",
+        "after each kick.",
+        "Starts OFF."
+      ]
+    },
+    {
+      "title": "Page 2-3 FX",
       "lines": [
         "Turn the jog: page 2",
-        "of KICK / HAT / RACK.",
+        "of HAT / RACK, page 3",
+        "of KICK (2 = SUB).",
         "Jog click: 8/16 steps",
         "All FX start OFF.",
         "",
-        "KICK FX (kick only)",
+        "KICK FX (kick pg3)",
         "1 SAT  2 DRIVE",
         " tube on the whole",
-        " kick, sub included",
+        " kick (not the SUB)",
         "",
         "HAT FX (hat only)",
         "1 HARM  2 FREQ",

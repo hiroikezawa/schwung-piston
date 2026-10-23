@@ -81,7 +81,7 @@ def block(inst=None):
 
 def ui_state(inst=None):
     f = read("ui_state", inst=inst).split(",")
-    assert f[0] == "3" and len(f) == 18 + 14 + 16 + 2 + 2 + 64 + 2 + 11 + 2 + 64 + 64 + 32, f  # ... rack FB, sidechain, page-2 FX, GR, PUNCH limit, rack sends, rack LPF
+    assert f[0] == "3" and len(f) == 18 + 14 + 16 + 2 + 2 + 64 + 2 + 11 + 2 + 64 + 64 + 32 + 10, f  # ... rack FB, sidechain, page-2 FX, GR, PUNCH limit, rack sends, rack LPF, PISTON SUB
     return [int(x) for x in f]
 
 
@@ -346,6 +346,36 @@ write("r_sc", "nan", inst=pr)
 assert ui_state(pr)[117] == 600
 destroy(q)
 destroy(pr)
+
+# --- PISTON SUB (0.10.0): ui_state 291-300, state "sub", kick preset ------------
+ps = create(b".", None)
+assert ui_state(ps)[291:301] == [0, 1, 0, 500, 700, 572, 250, 150, 400, 500], "defaults: SUB OFF"
+assert len(read("k_preset", inst=ps).split(",")) == 10 + 10
+write("sub_on", 1, inst=ps); write("sub_mode", 2, inst=ps); write("sub_trig", 1, inst=ps)
+write("sub_level", 0.8, inst=ps); write("sub_duck", "nan", inst=ps); write("sub_drive", 7, inst=ps)
+assert ui_state(ps)[291:301] == [1, 2, 1, 800, 700, 572, 250, 1000, 400, 500], ui_state(ps)[291:]
+assert abs(float(read("sub_level", inst=ps)) - 0.8) < 1e-4
+doc = json.loads(read("state", inst=ps))
+assert doc["sub"][:3] == [1, 2, 1]
+q7 = create(b".", None)
+write("state", read("state", inst=ps), inst=q7)
+assert ui_state(q7)[291:301] == ui_state(ps)[291:301], "SUB is saved with the Set"
+old_doc = dict(doc); del old_doc["sub"]
+write("state", json.dumps(old_doc), inst=q7)
+assert ui_state(q7)[291] == 0, "an older Set opens with SUB OFF"
+for bad in ([2] + doc["sub"][1:], doc["sub"][:2] + [3] + doc["sub"][3:], doc["sub"][:9]):
+    bd = dict(doc); bd["sub"] = bad
+    before = read("state", inst=q7)
+    write("state", json.dumps(bd), inst=q7)
+    assert read("state", inst=q7) == before, bad
+# a kick preset carries SUB; one saved before 0.10.0 (10 fields) loads with SUB OFF
+kp_sub = read("k_preset", inst=ps)
+write("k_preset", kp_sub, inst=q7)
+assert ui_state(q7)[291:301] == ui_state(ps)[291:301]
+write("k_preset", ",".join(kp_sub.split(",")[:10]), inst=q7)
+assert ui_state(q7)[291] == 0 and ui_state(q7)[292] == 2, "old preset: SUB OFF, the rest kept"
+destroy(q7)
+destroy(ps)
 
 # --- MIDI notes -----------------------------------------------------------------
 transport["beat"] = -1.0

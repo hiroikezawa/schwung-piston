@@ -6,6 +6,7 @@
  *   hat  = model              -> DRIVE -> COMP -> VOLUME ---+--> out
  *   kick * K REVERB + hat * H REVERB -> shared REVERB ------> out
  *   kick: ... COMP -> TUBE (KICK FX) -> VOLUME;  hat: ... COMP -> HARMONICS (HAT FX) -> VOLUME
+ *   kick hit -> PISTON SUB (A0 sine + A1 body, own ceiling) ----> out (centre)
  *   out -> BUS COMP (RACK FX) -> DC block -> -3 dBFS limiter
  */
 #ifndef HKH_VOICES_H
@@ -17,6 +18,7 @@
 #include "hkh_hat.h"
 #include "hkh_fx.h"
 #include "hkh_busfx.h"
+#include "hkh_sub.h"
 
 typedef struct {
     hkh_akick akick;
@@ -32,6 +34,7 @@ typedef struct {
     hkh_ktube ktube;            /* KICK FX page */
     hkh_harm hharm;             /* HAT FX page */
     hkh_buscomp bcomp;          /* RACK FX page: the whole output */
+    hkh_sub sub;                /* PISTON SUB: KICK page 2, fired by the kick */
     hkh_limiter limiter;
     /* per-sample ramps for the post-effect gains */
     float kvol, kvol_step, hvol, hvol_step;

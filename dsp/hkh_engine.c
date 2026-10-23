@@ -79,6 +79,7 @@ static void voices_init(hkh_engine *e) {
     hkh_ktube_init(&v->ktube);
     hkh_harm_init(&v->hharm);
     hkh_buscomp_init(&v->bcomp);
+    hkh_sub_init(&v->sub);
     hkh_rumble_init(&v->rumble);
     hkh_reverb_init(&v->reverb);
     hkh_limiter_init(&v->limiter);
@@ -99,6 +100,7 @@ static void voices_kick(hkh_engine *e, float vel) {
     hkh_akick_trigger(&e->voices.akick, e->k_model, vel, e->param[P_K_DECAY]);
     hkh_digital_trigger(&e->voices.dkick, kick_sample(e), vel);
     hkh_comp_trigger(&e->voices.kcomp);
+    hkh_sub_kick(&e->voices.sub, vel);      /* PISTON SUB: booked or started here */
     e->sc_t = 0.0f;                         /* the rack's sidechain key */
 }
 static void voices_hat(hkh_engine *e, float vel, float decay, int follows_base) {
@@ -111,6 +113,7 @@ static void voices_choke(hkh_engine *e, int hat) {
     } else {
         hkh_akick_choke(&e->voices.akick, 10.0f);
         hkh_digital_choke(&e->voices.dkick, 10.0f);
+        hkh_sub_choke(&e->voices.sub);
     }
 }
 static void voices_block(hkh_engine *e, int frames) {
@@ -193,7 +196,7 @@ static float rack_delay_tick(hkh_engine *e, float in) {
 static int voices_silent(const hkh_engine *e) {
     const hkh_voices *v = &e->voices;
     return !rack_active(e) && e->dly_quiet > HKH_DELAY_MAX && hkh_plate_idle(&e->plate) && !hkh_akick_active(&v->akick) && !hkh_digital_active(&v->dkick) &&
-           !hkh_hat_active(&v->hat) &&
+           !hkh_hat_active(&v->hat) && !hkh_sub_active(&v->sub) &&
            v->rumble.quiet >= (1 << 20) && v->rumble.amount < 0.001f &&
            v->reverb.quiet >= 44100 * 3 &&
            fabsf(v->limiter.dl_y) < 1e-6f && fabsf(v->limiter.dr_y) < 1e-6f;
@@ -258,7 +261,11 @@ static void voices_tick(hkh_engine *e, float *l, float *r) {
     e->sc_gain += (1.0f - e->r_sc * e->sc_env - e->sc_gain) * SC_SMOOTH;
     rsl *= e->sc_gain;
     rsr *= e->sc_gain;
-    float outl = kb + h + rl + rsl, outr = kb + h + rr + rsr;
+    /* PISTON SUB: mono, the same into both sides (centre). Outside the kick
+     * bus's ceiling, so with SUB on the kick itself is not pushed harder;
+     * with SUB off this adds exactly 0. */
+    float sb = hkh_sub_tick(&v->sub);
+    float outl = kb + sb + h + rl + rsl, outr = kb + sb + h + rr + rsr;
     hkh_buscomp_tick(&v->bcomp, &outl, &outr);
     hkh_limiter_tick(&v->limiter, &outl, &outr);
     *l = outl;
@@ -325,6 +332,10 @@ void hkh_engine_rack_set_fb(hkh_engine *e, float fb) {
 void hkh_engine_set_fx(hkh_engine *e, int index, float value) {
     if (index < 0 || index >= FX_COUNT) return;
     e->fx[index] = hkh_fx_clamp(index, value);
+}
+
+void hkh_engine_set_sub(hkh_engine *e, int index, float value) {
+    hkh_sub_set(&e->voices.sub, index, value);
 }
 
 void hkh_engine_rack_set_sc(hkh_engine *e, float depth) {
@@ -600,7 +611,11 @@ void hkh_engine_render(hkh_engine *e, float *out_l, float *out_r, int frames,
     /* A ratchet never outlives the transport. (Recording needs no such
      * guard: with no step playing there is nowhere to write.) */
     if (!e->seq.running) e->k_ratchet_in = e->h_ratchet_in = -1;
+    /* PISTON SUB: an OFFBEAT booked by the sequencer dies with the transport. */
+    if (e->was_running && !e->seq.running) hkh_sub_transport_stopped(&e->voices.sub);
+    e->was_running = e->seq.running;
     voices_block(e, frames);
+    hkh_sub_block(&e->voices.sub, bpm, frames);
 
     if (e->pending_k) {
         e->pending_k = 0;

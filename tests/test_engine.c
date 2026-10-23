@@ -7,6 +7,7 @@
 #include "../dsp/hkh_samples.h"
 #include "../dsp/hkh_hat.h"
 #include "../dsp/hkh_pattern.h"
+#include "../dsp/hkh_sub.h"
 #include <stdint.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -1541,6 +1542,272 @@ static void test_rack(void) {
     printf("PASS: rack: per-pad steps, mute, empty pads, volume, 16-step carry, dotted-1/8 delay\n");
 }
 
+/* ---- PISTON SUB (0.10.0) ------------------------------------------------- */
+#define SUBN (44100 * 2)
+static float SB[SUBN];
+static hkh_sub SUBV;
+
+/* n サンプル鳴らす。kick_at のサンプルでキックを打つ（-1 なら打たない）。
+ * bpm2 / at2：途中でテンポを変える。 */
+static void sub_run(hkh_sub *s, int n, int kick_at, float bpm, float bpm2, int at2) {
+    for (int i = 0; i < n; ++i) {
+        if (i % BLOCK == 0) hkh_sub_block(s, i >= at2 ? bpm2 : bpm, BLOCK);
+        if (i == kick_at) hkh_sub_kick(s, 1.0f);
+        SB[i] = hkh_sub_tick(s);
+        assert(isfinite(SB[i]) && fabsf(SB[i]) <= 0.8f);
+    }
+}
+static int first_sound(int from, int n) {
+    for (int i = from; i < n; ++i) if (SB[i] != 0.0f) return i;
+    return -1;
+}
+/* 定常部分の周波数：上向きゼロクロスの間隔から。 */
+static double sub_freq(int a, int b) {
+    int first = -1, last = -1, count = 0;
+    for (int i = a + 1; i < b; ++i)
+        if (SB[i - 1] < 0.0f && SB[i] >= 0.0f) { if (first < 0) first = i; last = i; ++count; }
+    return count > 1 ? 44100.0 * (count - 1) / (last - first) : 0.0;
+}
+static double sub_rms(int a, int b) {
+    double e = 0;
+    for (int i = a; i < b; ++i) e += SB[i] * SB[i];
+    return sqrt(e / (b - a));
+}
+static float sub_max_step(int a, int b) {
+    float m = 0;
+    for (int i = a + 1; i < b; ++i) m = fmaxf(m, fabsf(SB[i] - SB[i - 1]));
+    return m;
+}
+static void sub_setup(hkh_sub *s) {
+    hkh_sub_init(s);
+    hkh_sub_set(s, SUB_ON, 1.0f);
+    hkh_sub_set(s, SUB_DELAY, 0.0f);
+    hkh_sub_set(s, SUB_DUCK, 0.0f);
+    hkh_sub_set(s, SUB_DECAY, 1.0f);                  /* 1.5 s: a long steady part */
+}
+
+static void test_sub(void) {
+    hkh_sub *s = &SUBV;
+    /* OFF (the default): a kick books nothing and the output is exactly 0. */
+    hkh_sub_init(s);
+    assert(s->prm[SUB_ON] == 0.0f);
+    sub_run(s, 4410, 0, 120.0f, 120.0f, SUBN);
+    for (int i = 0; i < 4410; ++i) assert(SB[i] == 0.0f);
+    assert(!hkh_sub_active(s));
+
+    /* Pitch: SUB alone is A0 27.5 Hz, BODY alone (DEEP, a sine) is A1 55 Hz. */
+    sub_setup(s);
+    hkh_sub_set(s, SUB_BAL, 1.0f);
+    sub_run(s, SUBN, 0, 120.0f, 120.0f, SUBN);
+    double f0 = sub_freq(4410, 44100);
+    assert(fabs(f0 - 27.5) < 0.1);
+    sub_setup(s);
+    hkh_sub_set(s, SUB_BAL, 0.0f);
+    hkh_sub_set(s, SUB_MODE, SUB_DEEP);
+    sub_run(s, SUBN, 0, 120.0f, 120.0f, SUBN);
+    double f1 = sub_freq(4410, 44100);
+    assert(fabs(f1 - 55.0) < 0.2);
+    /* ... and in every mode the body repeats at 55 Hz (its fundamental). */
+    for (int m = 0; m < SUB_MODE_COUNT; ++m) {
+        sub_setup(s);
+        hkh_sub_set(s, SUB_BAL, 0.0f);
+        hkh_sub_set(s, SUB_MODE, (float)m);
+        hkh_sub_set(s, SUB_TONE, 0.0f);                /* darkest: one crossing a cycle */
+        sub_run(s, SUBN, 0, 120.0f, 120.0f, SUBN);
+        assert(fabs(sub_freq(4410, 44100) - 55.0) < 0.3);
+    }
+
+    /* FOLLOW: DELAY 25 ms (the default) starts the sub 1102 samples after
+     * the kick; 0 starts it on the kick's own sample. (Both oscillators start
+     * at a zero crossing, so the first non-zero sample is the one after.) */
+    sub_setup(s);
+    hkh_sub_set(s, SUB_DELAY, 0.25f);
+    sub_run(s, 8000, 1000, 120.0f, 120.0f, SUBN);
+    int on = first_sound(0, 8000);
+    assert(on >= 1000 + 1102 + 1 && on <= 1000 + 1103 + 1);
+    sub_setup(s);
+    sub_run(s, 4000, 1000, 120.0f, 120.0f, SUBN);
+    assert(first_sound(0, 4000) == 1001);
+
+    /* OFFBEAT: half a beat later, counted in beats -- 11025 samples at 120,
+     * and a tempo change while waiting still lands it on the offbeat. */
+    sub_setup(s);
+    hkh_sub_set(s, SUB_TRIG, SUB_OFFBEAT);
+    sub_run(s, 20000, 0, 120.0f, 120.0f, SUBN);
+    on = first_sound(0, 20000);
+    assert(on >= 11025 && on <= 11027);
+    sub_setup(s);
+    hkh_sub_set(s, SUB_TRIG, SUB_OFFBEAT);
+    sub_run(s, 30000, 0, 120.0f, 60.0f, 5120);
+    /* 5120 samples at 120 = 0.2322 beat; the other 0.2678 at 60 = 11811 */
+    on = first_sound(0, 30000);
+    assert(abs(on - (5120 + 11811 + 1)) <= 2);
+    /* the transport stopping drops an OFFBEAT that is still waiting */
+    sub_setup(s);
+    hkh_sub_set(s, SUB_TRIG, SUB_OFFBEAT);
+    hkh_sub_kick(s, 1.0f);
+    assert(hkh_sub_active(s));
+    hkh_sub_transport_stopped(s);
+    assert(!hkh_sub_active(s));
+
+    /* Fast retriggers (every 40 ms, a 1/32 at ~190 BPM) never click: no step
+     * bigger than the attack ramp makes. */
+    for (int m = 0; m < SUB_MODE_COUNT; ++m) {
+        sub_setup(s);
+        hkh_sub_set(s, SUB_LEVEL, 1.0f);
+        hkh_sub_set(s, SUB_MODE, (float)m);
+        hkh_sub_set(s, SUB_TONE, 0.4f);
+        float worst = 0;
+        for (int i = 0; i < SUBN; ++i) {
+            if (i % BLOCK == 0) hkh_sub_block(s, 120.0f, BLOCK);
+            if (i % 1764 == 0) hkh_sub_kick(s, i % 3528 ? 0.6f : 1.0f);
+            SB[i] = hkh_sub_tick(s);
+            if (i) worst = fmaxf(worst, fabsf(SB[i] - SB[i - 1]));
+        }
+        assert(worst < (m == SUB_DIRTY ? 0.08f : 0.03f));
+    }
+
+    /* DRIVE: more harmonics, about the same loudness (+-3 dB, every mode). */
+    for (int m = 0; m < SUB_MODE_COUNT; ++m) {
+        double r[2];
+        for (int d = 0; d < 2; ++d) {
+            sub_setup(s);
+            hkh_sub_set(s, SUB_BAL, 0.0f);
+            hkh_sub_set(s, SUB_MODE, (float)m);
+            hkh_sub_set(s, SUB_TONE, 1.0f);
+            hkh_sub_set(s, SUB_DRIVE, (float)d);
+            sub_run(s, 22050, 0, 120.0f, 120.0f, SUBN);
+            r[d] = sub_rms(2205, 8820);
+        }
+        assert(r[1] < 1.42 * r[0] && r[1] > 0.70 * r[0]);
+    }
+    /* turning DRIVE (and every knob) while it sounds: no zipper steps */
+    sub_setup(s);
+    hkh_sub_set(s, SUB_LEVEL, 1.0f);
+    hkh_sub_set(s, SUB_MODE, SUB_ANALOG);
+    float worst = 0;
+    for (int i = 0; i < 44100; ++i) {
+        if (i % BLOCK == 0) {
+            float t = (float)((i / BLOCK) % 2);
+            hkh_sub_set(s, SUB_DRIVE, t);
+            hkh_sub_set(s, SUB_BAL, 1.0f - t);
+            hkh_sub_set(s, SUB_LEVEL, 0.5f + 0.5f * t);
+            hkh_sub_set(s, SUB_TONE, t);
+            hkh_sub_block(s, 120.0f, BLOCK);
+        }
+        if (i == 0) hkh_sub_kick(s, 1.0f);
+        SB[i] = hkh_sub_tick(s);
+        if (i > 200) worst = fmaxf(worst, fabsf(SB[i] - SB[i - 1]));
+    }
+    assert(worst < 0.03f);
+
+    /* MODE switches mid-note crossfade: no step beyond what DIRTY itself has. */
+    sub_setup(s);
+    hkh_sub_set(s, SUB_BAL, 0.0f);
+    hkh_sub_set(s, SUB_LEVEL, 1.0f);
+    hkh_sub_set(s, SUB_MODE, SUB_DIRTY);
+    sub_run(s, 22050, 0, 120.0f, 120.0f, SUBN);
+    float dirty_own = sub_max_step(2205, 22050);
+    sub_setup(s);
+    hkh_sub_set(s, SUB_BAL, 0.0f);
+    hkh_sub_set(s, SUB_LEVEL, 1.0f);
+    hkh_sub_set(s, SUB_MODE, SUB_DEEP);
+    for (int i = 0; i < 22050; ++i) {
+        if (i % BLOCK == 0) hkh_sub_block(s, 120.0f, BLOCK);
+        if (i == 0) hkh_sub_kick(s, 1.0f);
+        if (i == 4410) hkh_sub_set(s, SUB_MODE, SUB_DIRTY);
+        if (i == 9000) hkh_sub_set(s, SUB_MODE, SUB_ANALOG);
+        if (i == 13000) hkh_sub_set(s, SUB_MODE, SUB_DEEP);
+        SB[i] = hkh_sub_tick(s);
+    }
+    assert(sub_max_step(1, 22050) <= dirty_own * 1.1f + 0.002f);
+
+    /* DUCK: a kick pulls a sounding sub down, then it comes back smoothly. */
+    sub_setup(s);
+    hkh_sub_set(s, SUB_BAL, 1.0f);
+    hkh_sub_set(s, SUB_DUCK, 1.0f);
+    hkh_sub_set(s, SUB_TRIG, SUB_OFFBEAT);
+    sub_run(s, 30000, 0, 120.0f, 120.0f, SUBN);       /* sub from 11025 */
+    double before = sub_rms(11025 + 2205, 11025 + 4410);
+    for (int i = 0; i < 4410; ++i) {
+        if (i % BLOCK == 0) hkh_sub_block(s, 120.0f, BLOCK);
+        if (i == 0) hkh_sub_kick(s, 1.0f);             /* the next kick */
+        SB[i] = hkh_sub_tick(s);
+    }
+    assert(sub_rms(220, 880) < 0.1 * before);          /* ducked during the kick's attack */
+    assert(sub_max_step(1, 4410) < 0.02f);             /* in and out without a click */
+
+    /* OFF while sounding: released in ~12 ms, not cut; bookings dropped. */
+    sub_setup(s);
+    hkh_sub_set(s, SUB_LEVEL, 1.0f);
+    sub_run(s, 4410, 0, 120.0f, 120.0f, SUBN);
+    hkh_sub_set(s, SUB_DELAY, 1.0f);
+    hkh_sub_kick(s, 1.0f);                             /* booked 100 ms ahead */
+    hkh_sub_set(s, SUB_ON, 0.0f);
+    float prev = SB[4409], jump = 0;
+    for (int i = 0; i < 2000; ++i) {
+        float x = hkh_sub_tick(s);
+        jump = fmaxf(jump, fabsf(x - prev));
+        prev = x;
+        if (i > 600) assert(x == 0.0f);
+    }
+    assert(jump < 0.03f && !hkh_sub_active(s));
+    /* garbage in is ignored, not stored */
+    hkh_sub_set(s, SUB_LEVEL, NAN);
+    hkh_sub_set(s, SUB_MODE, 7.0f);
+    assert(s->prm[SUB_LEVEL] == 1.0f && s->prm[SUB_MODE] == SUB_DIRTY);
+
+    /* Through the engine: SUB OFF leaves the output bit for bit as before
+     * any SUB setting was touched; SUB ON adds a centred (L = R) low end;
+     * the hat alone is untouched by SUB ON. */
+    static hkh_engine a, b;
+    transport t1 = {0.0, 120.0f, 1}, t2 = {0.0, 120.0f, 1};
+    hkh_engine_init(&a, 5);
+    hkh_engine_init(&b, 5);
+    hkh_engine_set_sub(&b, SUB_LEVEL, 0.9f);           /* settings, but OFF */
+    hkh_engine_set_sub(&b, SUB_MODE, SUB_DIRTY);
+    static float al[BLOCK], ar[BLOCK];
+    for (int k = 0; k < 400; ++k) {
+        hkh_engine_render(&a, al, ar, BLOCK, t1.beat, t1.bpm);
+        hkh_engine_render(&b, L, R, BLOCK, t2.beat, t2.bpm);
+        t1.beat += BLOCK / spb(120.0f); t2.beat += BLOCK / spb(120.0f);
+        assert(!memcmp(al, L, sizeof(al)) && !memcmp(ar, R, sizeof(ar)));
+    }
+    hkh_engine_init(&a, 5);
+    hkh_engine_init(&b, 5);
+    hkh_engine_set_sub(&b, SUB_ON, 1.0f);
+    double diff = 0;
+    t1.beat = t2.beat = 0.0;
+    for (int k = 0; k < 400; ++k) {
+        hkh_engine_render(&a, al, ar, BLOCK, t1.beat, 120.0f);
+        hkh_engine_render(&b, L, R, BLOCK, t2.beat, 120.0f);
+        t1.beat += BLOCK / spb(120.0f); t2.beat += BLOCK / spb(120.0f);
+        for (int i = 0; i < BLOCK; ++i) {
+            assert(isfinite(L[i]) && fabsf(L[i]) <= 1.0f);
+            diff += fabs(L[i] - al[i]);
+            /* centred: the sub adds the same to both sides */
+            assert(fabsf((L[i] - al[i]) - (R[i] - ar[i])) < 1e-6f);
+        }
+    }
+    assert(diff > 10.0);
+    hkh_engine_init(&a, 5);
+    hkh_engine_init(&b, 5);
+    a.k_pattern = b.k_pattern = 0;                     /* hat only */
+    hkh_engine_set_sub(&b, SUB_ON, 1.0f);
+    t1.beat = t2.beat = 0.0;
+    for (int k = 0; k < 400; ++k) {
+        hkh_engine_render(&a, al, ar, BLOCK, t1.beat, 120.0f);
+        hkh_engine_render(&b, L, R, BLOCK, t2.beat, 120.0f);
+        t1.beat += BLOCK / spb(120.0f); t2.beat += BLOCK / spb(120.0f);
+        assert(!memcmp(al, L, sizeof(al)) && !memcmp(ar, R, sizeof(ar)));
+    }
+    /* kick mute chokes the sub with the kick */
+    hkh_engine_set_mute(&b, 0, 1);
+    assert(!hkh_sub_active(&b.voices.sub) || b.voices.sub.stage == 3);
+    printf("PASS: PISTON SUB: OFF = untouched, A0/A1 steady, FOLLOW DELAY, OFFBEAT in beats, "
+           "no clicks, DRIVE level-matched, DUCK, centred, hat untouched\n");
+}
+
 int main(void) {
     test_seq_timing();
     test_seq_edges();
@@ -1570,6 +1837,7 @@ int main(void) {
     test_fill();
     test_sixteen();
     test_rack();
+    test_sub();
     const char *dir = getenv("HKH_TEST_DIR");
     assert(dir && dir[0]);
     test_wav_loader(dir);

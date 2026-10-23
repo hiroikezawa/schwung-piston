@@ -31,7 +31,7 @@ export function noteAt(row, col) { return ROW_BASE[row] + col; }
  *   rows 3-4: its steps (8 steps: row 4 only; 16: row 3 = 1-8, row 4 = 9-16)
  * RACK is drawn by rackLeds below. */
 export const TOP_ROWS = [
-    ["mute", "reset", "shuffle", "random", "fill", "analog", "digital", null],   /* KICK */
+    ["mute", "reset", "shuffle", "random", "fill", "analog", "digital", "sub"],  /* KICK */
     ["mute", "reset", "shuffle", "random", "fill", "model", "offbeat", "rec"],   /* HAT */
 ];
 export const PRESETS = 8;
@@ -135,6 +135,36 @@ export function fxPos(key, v) {
 }
 const ENUM_TICKS = 10;         /* encoder counts per choice on an option knob */
 
+/* PISTON SUB（KICK の2ページ目）。キーと順番は dsp/hkh_sub.h と同じ。
+ * ON / MODE / TRIGGER は KICK の上段右端の SUB パッドで操作し、残りの 7 つが
+ * ノブ1〜7。値はすべてノブ位置 0..1 で、実際の単位への変換は DSP と同じ式。 */
+export const SUB_KEYS = ["sub_on", "sub_mode", "sub_trig", "sub_level", "sub_bal",
+    "sub_decay", "sub_delay", "sub_drive", "sub_tone", "sub_duck"];
+export const SUB_MODES = ["DEEP", "ANALOG", "DIRTY"];
+export const SUB_TRIGS = ["FOLLOW", "OFFBEAT"];
+export const subDecayMs = (v) => 50 * Math.pow(30, v);      /* 50..1500 ms */
+export const subDelayMs = (v) => 100 * v;                   /* 0..100 ms */
+const offbeat = (st) => st && st.sub && st.sub.sub_trig === 1;
+export const SUB_DEFS = {
+    sub_level: { min: 0, max: 1, res: 0.001, label: "LEVEL", name: "SUB LEVEL", show: pct },
+    sub_bal: { min: 0, max: 1, res: 0.001, label: "S/B", name: "SUB/BODY",
+        show: (v) => `${Math.round(v * 100)}/${Math.round((1 - v) * 100)}`, cell: pct },   /* 欄には SUB の割合 */
+    sub_decay: { min: 0, max: 1, res: 0.001, label: "DECAY", name: "DECAY",
+        show: (v) => `${Math.round(subDecayMs(v))}ms`, cell: (v) => String(Math.round(subDecayMs(v))) },
+    /* DELAY は FOLLOW のときだけ働く。OFFBEAT 中はそう表示する。 */
+    sub_delay: { min: 0, max: 1, res: 0.001, label: "DELAY", name: "DELAY",
+        show: (v, st) => (offbeat(st) ? "OFFBEAT: unused" : `${Math.round(subDelayMs(v))}ms`),
+        cell: (v, st) => (offbeat(st) ? "-" : String(Math.round(subDelayMs(v)))) },
+    sub_drive: { min: 0, max: 1, res: 0.001, label: "DRIVE", name: "DRIVE", show: pct },
+    sub_tone: { min: 0, max: 1, res: 0.001, label: "TONE", name: "TONE", show: pct },
+    sub_duck: { min: 0, max: 1, res: 0.001, label: "DUCK", name: "DUCK", show: pct },
+};
+export const SUB_KNOBS = ["sub_level", "sub_bal", "sub_decay", "sub_delay", "sub_drive", "sub_tone", "sub_duck", null];
+export const SUB_TITLE = "PISTON SUB";
+/* SUB パッドを押さえている間、ステップに並ぶ選択肢：1-3 = MODE、5-6 = TRIGGER。 */
+export const SUB_PICK_MODE = [0, 1, 2];
+export const SUB_PICK_TRIG = [4, 5];
+
 export const KICK_MODELS = ["808", "909", "IND"];
 /* The four built-in digital kicks (scripts/gen_digital_kicks.py); a slot
  * holding the user's own WAV shows as USR1-5 instead. */
@@ -155,7 +185,11 @@ const PICKERS = {
 const KNOB_CC_FIRST = 71;
 const JOG_TURN = 14;
 const JOG_CLICK = 3;
-const PAGES = 2;               /* 0: play, 1: this part's effects + 8 / 16 steps */
+/* ジョグのページ：0 = 演奏。KICK は 1 = PISTON SUB、2 = KICK FX（TUBE）。
+ * HAT / RACK は 1 = そのパートのエフェクト。ページ 1 以降はジョグクリックで
+ * 8 / 16 ステップ。 */
+export function pagesFor(mode) { return mode === MODE_KICK ? 3 : 2; }
+export function fxPageFor(mode) { return mode === MODE_KICK ? 2 : 1; }
 const SHIFT_CC = 49;
 const PAGE_TURN_MS = 1000;     /* knob 8: a pause this long forgets a part-turn */
 export const PAGE_TICKS = 40;  /* knob 8: encoder counts per page (~120 degrees) */
@@ -187,6 +221,7 @@ export const C = {
     RACK: 14, RACK_DIM: 91,         /* CyanTeal: the rack switch, pads with a sample */
     RACK_STEP: 16,                  /* AzureBlue: a held pad's steps */
     RACK_MUTED: 66,                 /* VeryDarkRed */
+    SUB: 16, SUB_DIM: 95,           /* AzureBlue / DarkAzure: PISTON SUB の ON / OFF */
 };
 
 /* A held rack pad's knobs 1-6: its volume, its four sends and its LPF. */
@@ -210,7 +245,8 @@ export const UI_STATE_FIELDS = 18 + 14 + 16 + 2 + 2 + 32 + 32 + 1 + 1   // + the
     + 11 + 2                                                             // + page-2 effects, GR, PUNCH limit (0.7.0)
     + 32 + 32                                                            // + rack DLY / REV sends (0.8.0)
     + 32 + 32                                                            // + rack CRUSH / RING sends (0.8.1)
-    + 32;                                                                // + rack LPF (0.8.2)
+    + 32                                                                 // + rack LPF (0.8.2)
+    + 10;                                                                // + PISTON SUB (0.10.0)
 
 export function parseUiState(text) {
     if (typeof text !== "string" || text.length === 0) return null;
@@ -240,6 +276,8 @@ export function parseUiState(text) {
         rds: n.slice(131, 163).map((x) => x / 1000), rrs: n.slice(163, 195).map((x) => x / 1000),
         rcs: n.slice(195, 227).map((x) => x / 1000), rms: n.slice(227, 259).map((x) => x / 1000),
         rlp: n.slice(259, 291).map((x) => x / 1000),
+        /* PISTON SUB：ON / MODE / TRIGGER はそのまま、ほかはノブ位置 */
+        sub: Object.fromEntries(SUB_KEYS.map((k, i) => [k, i < 3 ? n[291 + i] : n[291 + i] / 1000])),
     };
 }
 
@@ -249,7 +287,8 @@ export function defaultState() {
         Array(16).fill(-1).join(",") + ",0,0,0,0," +
         Array(32).fill(0).join(",") + "," + Array(32).fill(800).join(",") + ",0,0," +
         FX_KEYS.map((k) => Math.round(FX_DEFS[k].def * 10)).join(",") + ",0,0," +
-        Array(32).fill(1000).join(",") + "," + Array(96).fill(0).join(",") + "," + Array(32).fill(1000).join(","));
+        Array(32).fill(1000).join(",") + "," + Array(96).fill(0).join(",") + "," + Array(32).fill(1000).join(",") +
+        ",0,1,0,500,700,572,250,150,400,500");
 }
 
 /* ---- LEDs (pure) --------------------------------------------------------- */
@@ -297,6 +336,8 @@ export function computeLeds(s, ui) {
     } else {
         put(0, 5, ui.sel === "analog" ? C.ANALOG : C.ANALOG_DIM);
         put(0, 6, ui.sel === "digital" ? C.DIGITAL : C.DIGITAL_DIM);
+        /* SUB：押さえている間は白、ON なら明るい青、OFF なら暗い青 */
+        put(0, 7, ui.sel === "sub" ? C.WHITE : s.sub.sub_on ? C.SUB : C.SUB_DIM);
     }
 
     /* Row 2: this voice's presets. White = the one last recalled or saved. */
@@ -311,6 +352,12 @@ export function computeLeds(s, ui) {
 
     /* Rows 3-4: the steps, or while a selector is held, its choices on the
      * first step pads (current one white). */
+    if (ui.sel === "sub" && !hat) {
+        /* SUB パッドを押さえている間：ステップ1-3 = MODE、5-6 = TRIGGER（今の値は白） */
+        SUB_PICK_MODE.forEach((st, i) => { out[stepPad(st, s.len)] = i === s.sub.sub_mode ? C.WHITE : C.SUB; });
+        SUB_PICK_TRIG.forEach((st, i) => { out[stepPad(st, s.len)] = i === s.sub.sub_trig ? C.WHITE : C.OFFBEAT; });
+        return out;
+    }
     const pick = ui.sel && PICKERS[ui.sel];
     if (pick && (ui.sel === "model") === hat) {
         const cur = s[pick.field];
@@ -420,7 +467,8 @@ export function createUi(host) {
     let pageAcc = 0;
     let flash = "";                    /* a one-line confirmation, e.g. SAVED 3 */
     let flashUntil = 0;
-    const selHeld = { analog: false, digital: false, model: false };
+    const selHeld = { analog: false, digital: false, model: false, sub: false };
+    let subPicked = false;             /* SUB パッドを押さえている間に選んだ（離しても ON/OFF しない） */
     let fillHeld = [false, false];
     let recHeld = false;
     let touched = -1;
@@ -466,7 +514,7 @@ export function createUi(host) {
         if (recHeld) set("h_motion_rec", 0);
         fillHeld = [false, false];
         recHeld = false;
-        selHeld.analog = selHeld.digital = selHeld.model = false;
+        selHeld.analog = selHeld.digital = selHeld.model = selHeld.sub = false;
         ui.sel = null;
         ui.held.clear();
         ui.rackHeld = -1;
@@ -524,7 +572,7 @@ export function createUi(host) {
             if (fillHeld[hat ? 1 : 0]) { set(prefix + "fill", 0); fillHeld[hat ? 1 : 0] = false; }
             if (hat) stopRecording();
         }
-        selHeld.analog = selHeld.digital = selHeld.model = false;
+        selHeld.analog = selHeld.digital = selHeld.model = selHeld.sub = false;
         updateSel();
         ui.rackHeld = -1;
         /* KICK | HAT | RACK in a line: the ends stop, nothing wraps. */
@@ -532,6 +580,9 @@ export function createUi(host) {
         if (next === s.mode) return;
         set("mode", next);
         s.mode = next;
+        /* 演奏ページ以外にいたら、次のパートのエフェクトページへ（HAT / RACK に
+         * SUB ページは無い） */
+        if (page > 0) page = fxPageFor(next);
     }
 
     /* ---- the rack surface ---- */
@@ -607,7 +658,8 @@ export function createUi(host) {
 
     function updateSel() {
         /* Whichever select pad is held picks; the kick pair is exclusive. */
-        ui.sel = selHeld.model ? "model" : selHeld.analog ? "analog" : selHeld.digital ? "digital" : null;
+        ui.sel = selHeld.model ? "model" : selHeld.sub ? "sub" : selHeld.analog ? "analog"
+            : selHeld.digital ? "digital" : null;
     }
 
     function onVoicePad(note, velocity) {
@@ -622,11 +674,32 @@ export function createUi(host) {
 
         if (row === 0) {
             const role = TOP_ROWS[hat ? 1 : 0][col];
+            if (role === "sub") {
+                /* SUB：タップで ON / OFF。押さえたままステップを押すと MODE /
+                 * TRIGGER を選ぶ（そのときは離しても ON / OFF しない）。 */
+                if (down) {
+                    selHeld.analog = selHeld.digital = false;
+                    selHeld.sub = true;
+                    subPicked = false;
+                } else if (selHeld.sub) {
+                    selHeld.sub = false;
+                    if (!subPicked) {
+                        const on = s.sub.sub_on ? 0 : 1;
+                        set("sub_on", on);
+                        s.sub.sub_on = on;
+                        readDue = true;
+                        say(on ? "SUB ON" : "SUB OFF");
+                    }
+                }
+                updateSel();
+                return;
+            }
             if (role === "analog" || role === "digital" || role === "model") {
                 if (down && role !== "model") {
                     /* Kick pickers are exclusive: the newest press wins. */
                     selHeld.analog = role === "analog";
                     selHeld.digital = role === "digital";
+                    selHeld.sub = false;
                 } else {
                     selHeld[role] = down;
                 }
@@ -687,6 +760,13 @@ export function createUi(host) {
         if (!down) return;
         const step = padStep(row, col, s.len);
         if (step < 0) return;
+        if (ui.sel === "sub") {
+            const mi = SUB_PICK_MODE.indexOf(step), ti = SUB_PICK_TRIG.indexOf(step);
+            if (mi >= 0) { set("sub_mode", mi); s.sub.sub_mode = mi; subPicked = true; }
+            else if (ti >= 0) { set("sub_trig", ti); s.sub.sub_trig = ti; subPicked = true; }
+            readDue = true;
+            return;
+        }
         if (ui.sel) {
             const pick = PICKERS[ui.sel];
             if (step < pick.names.length) { set(pick.key, step); s[pick.field] = step; }
@@ -701,11 +781,13 @@ export function createUi(host) {
     function onJog(cc, value) {
         if (cc === JOG_TURN) {
             const d = decodeDelta(value);
-            if (d > 0 && page < PAGES - 1) page++;
+            const was = page;
+            if (d > 0 && page < pagesFor(s.mode) - 1) page++;
             else if (d < 0 && page > 0) page--;
-            if (page === 1) { stopRecording(); touched = -1; touchShowUntil = 0; }
+            if (page !== was) { touched = -1; touchShowUntil = 0; }
+            if (page > 0) stopRecording();
             dirty = true;
-        } else if (cc === JOG_CLICK && value > 0 && page === 1) {
+        } else if (cc === JOG_CLICK && value > 0 && page > 0) {
             const next = s.len === 16 ? 8 : 16;
             set("length", next);
             s.len = next;
@@ -735,7 +817,7 @@ export function createUi(host) {
             dirty = true;
             return;
         }
-        if (page === 1) { onFxKnob(knob, value); return; }
+        if (page > 0) { onFxKnob(knob, value); return; }
         if (s.mode === MODE_RACK) {
             const pad = ui.rackHeld, d = decodeDelta(value);
             if (knob === 6 && d !== 0) {
@@ -787,15 +869,22 @@ export function createUi(host) {
         dirty = true;
     }
 
-    /* Page 2: the part's effect knobs, in real units. */
+    /* 今のページのノブ：PISTON SUB か、パートのエフェクト。 */
+    function pageKnobs() {
+        if (s.mode === MODE_KICK && page === 1) return { keys: SUB_KNOBS, defs: SUB_DEFS, vals: s.sub };
+        return { keys: FX_KNOBS[s.mode] || [], defs: FX_DEFS, vals: s.fx };
+    }
+
+    /* Page 2 (and KICK page 3): the page's knobs, in real units. */
     function onFxKnob(knob, value) {
-        const key = FX_KNOBS[s.mode][knob];
+        const { keys, defs, vals } = pageKnobs();
+        const key = keys[knob];
         const d = decodeDelta(value);
         if (d === 0) return;
         const now = host.now();
         if (key) {
-            const def = FX_DEFS[key];
-            let v = s.fx[key];
+            const def = defs[key];
+            let v = vals[key];
             if (def.options) {
                 if (Math.sign(d) !== Math.sign(enumAcc[knob])) enumAcc[knob] = 0;
                 enumAcc[knob] += d;
@@ -808,8 +897,8 @@ export function createUi(host) {
                 v = Math.min(def.max, Math.max(def.min, Math.round(v / def.res) * def.res));
             }
             lastTurn[knob] = now;
-            if (v === s.fx[key]) return;
-            s.fx[key] = v;
+            if (v === vals[key]) return;
+            vals[key] = v;
             pending.set(key, v);
         }
         lastTouchKnob = knob;
@@ -819,8 +908,8 @@ export function createUi(host) {
 
     function onKnobTouch(knob, down) {
         if (knob === 7) return;                              /* knob 8 turns pages */
-        if (page === 1) {
-            /* page 2: a touch only shows the knob (no DECAY recording here) */
+        if (page > 0) {
+            /* pages 2-3: a touch only shows the knob (no DECAY recording here) */
             const now = host.now();
             if (down) { touched = knob; lastTouchKnob = knob; }
             else if (touched === knob) touched = -1;
@@ -906,7 +995,12 @@ export function createUi(host) {
         /* Header: the knob target, inverted, so it reads from across a room. */
         g.fillRect(0, 0, 128, 11, 1);
         const rack = s.mode === MODE_RACK;
-        if (page === 1) {
+        const subPage = s.mode === MODE_KICK && page === 1;
+        if (subPage) {
+            g.print(2, 2, SUB_TITLE, 0);
+            const st = s.sub.sub_on ? "ON" : "OFF";
+            g.print(126 - tw(st), 2, st, 0);
+        } else if (page > 0) {
             g.print(2, 2, FX_TITLES[s.mode] || "?", 0);
             const gr = s.mode === MODE_RACK ? (s.fx.bc_ratio > 0 ? `GR ${s.bcGr > 0 ? "-" : ""}${s.bcGr.toFixed(1)}` : "OFF") : "";
             if (gr) g.print(126 - tw(gr), 2, gr, 0);
@@ -916,9 +1010,9 @@ export function createUi(host) {
                  : hat ? HAT_MODELS[s.hmodel] || "?"
                        : `${KICK_MODELS[s.kmodel] || "?"}+${digitalName(s, s.ksample)}`;
         if (s.rec && (tickCount >> 4) % 2 === 0) info = "REC " + info;
-        if (page !== 1) g.print(126 - tw(info), 2, info, 0);
+        if (page === 0) g.print(126 - tw(info), 2, info, 0);
 
-        if (page === 1) { drawFx(g, tw); dirty = false; return; }
+        if (page > 0) { drawFx(g, tw); dirty = false; return; }
 
         if (rack) { drawRack(g, tw); dirty = false; return; }
 
@@ -942,7 +1036,10 @@ export function createUi(host) {
 
         const now = host.now();
         const bigKnob = touched >= 0 ? touched : (now < touchShowUntil ? lastTouchKnob : -1);
-        if (now < flashUntil) {
+        if (ui.sel === "sub") {
+            /* 押さえている間は、直前の "SUB ON" 表示より選択肢を優先する */
+            drawSubPicker(g, tw, 38);
+        } else if (now < flashUntil) {
             g.fillRect(0, 40, 128, 16, 1);
             g.print(Math.max(1, Math.floor((128 - tw(flash)) / 2)), 44, flash, 0);
         } else if (ui.sel) {
@@ -1000,19 +1097,39 @@ export function createUi(host) {
         dirty = false;
     }
 
-    /* Page 2: the part's effect knobs, and the shared 8 / 16 steps (jog click). */
+    /* SUB パッドを押さえている間の選択肢：上の段が MODE（ステップ1-3）、
+     * 下の段が TRIGGER（ステップ5-6）。今の値は反転。 */
+    function drawSubPicker(g, tw, y0) {
+        const rows = [[SUB_MODES, s.sub.sub_mode], [SUB_TRIGS, s.sub.sub_trig]];
+        rows.forEach(([names, cur], r) => {
+            const w = Math.floor(128 / names.length), y = y0 + r * 13;
+            names.forEach((name, i) => {
+                const x = i * w;
+                if (i === cur) g.fillRect(x, y, w - 1, 12, 1);
+                else g.drawRect(x, y, w - 1, 12, 1);
+                g.print(x + Math.max(1, Math.floor((w - 1 - tw(name)) / 2)), y + 2, name, i === cur ? 0 : 1);
+            });
+        });
+    }
+
+    /* Page 2 (KICK: pages 2-3): the page's knobs, and the shared 8 / 16 steps (jog click). */
     function drawFx(g, tw) {
-        const keys = FX_KNOBS[s.mode] || [];
+        const { keys, defs, vals } = pageKnobs();
+        const subPage = keys === SUB_KNOBS;
         const now = host.now();
         const bigKnob = touched >= 0 ? touched : (now < touchShowUntil ? lastTouchKnob : -1);
-        if (bigKnob >= 0 && bigKnob < 7) {
+        if (subPage && ui.sel === "sub") {
+            drawSubPicker(g, tw, 20);
+        } else if (bigKnob >= 0 && bigKnob < 7) {
             const key = keys[bigKnob];
             if (key) {
-                const v = s.fx[key], txt = fxText(key, v);
-                g.print(0, 16, `${bigKnob + 1} ${FX_DEFS[key].name}`, 1);
+                const def = defs[key], v = vals[key];
+                const txt = subPage ? def.show(v, s) : fxText(key, v);
+                g.print(0, 16, `${bigKnob + 1} ${def.name}`, 1);
                 g.print(126 - tw(txt), 16, txt, 1);
                 g.drawRect(0, 28, 128, 12, 1);
-                g.fillRect(2, 30, Math.round(124 * Math.min(1, Math.max(0, fxPos(key, v)))), 8, 1);
+                const pos = subPage ? v : fxPos(key, v);
+                g.fillRect(2, 30, Math.round(124 * Math.min(1, Math.max(0, pos))), 8, 1);
                 if (key === "bc_punch" && s.bcLim) g.print(0, 44, "PUNCH IS LIMITING", 1);
             } else {
                 g.print(0, 16, `${bigKnob + 1} not assigned`, 1);
@@ -1026,14 +1143,21 @@ export function createUi(host) {
                 /* the label inverted in its own 31-pixel box: the columns
                  * read as columns even where two long labels sit side by side */
                 g.fillRect(x, y - 1, 31, 9, 1);
-                g.print(x + 1, y, FX_DEFS[key].label, 0);
-                let txt = fxCellText(key, s.fx[key]);
+                g.print(x + 1, y, defs[key].label, 0);
+                let txt = subPage ? (defs[key].cell ? defs[key].cell(vals[key], s) : defs[key].show(vals[key], s))
+                    : fxCellText(key, s.fx[key]);
                 if (key === "bc_punch" && s.bcLim) txt += "*";
                 g.print(x + 1, y + 9, txt, 1);
             }
         }
-        /* bottom line: the shared step length, switched with a jog click */
-        g.print(0, 56, `STEPS ${s.len}  click: 8/16`, 1);
+        /* bottom line: SUB の状態、または共通のステップ数（ジョグクリックで 8 / 16） */
+        if (subPage) {
+            g.print(0, 56, `${SUB_MODES[s.sub.sub_mode] || "?"} ${SUB_TRIGS[s.sub.sub_trig] || "?"}`, 1);
+            const st = `STEPS ${s.len}`;
+            g.print(126 - tw(st), 56, st, 1);
+        } else {
+            g.print(0, 56, `STEPS ${s.len}  click: 8/16`, 1);
+        }
     }
 
     /* The rack: the 6 x 4 block as on the pads, or a held pad's detail. */

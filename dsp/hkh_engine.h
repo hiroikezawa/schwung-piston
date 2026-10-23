@@ -50,6 +50,7 @@ typedef struct {
     int k_fill, h_fill;            /* momentary, never saved */
     float motion[HKH_STEPS];       /* per-step hat DECAY, or HKH_MOTION_NONE */
     int motion_rec;                /* DECAY knob is being touched in HAT mode */
+    int was_running;               /* transport last block (PISTON SUB drops its OFFBEAT bookings on stop) */
 
     /* Heartbeats: a held FILL or a touched knob must be restated by the UI.
      * If the UI goes away mid-hold (slot switch, crash) the DSP lets go by
@@ -138,6 +139,8 @@ void hkh_engine_rack_set_sc(hkh_engine *e, float depth);
 void hkh_engine_set_param(hkh_engine *e, int index, float value);
 /* Page-2 effects (KICK FX / HAT FX / BUS COMP), real units, clamped. */
 void hkh_engine_set_fx(hkh_engine *e, int index, float value);
+/* PISTON SUB (KICK page 2): index = SUB_* (hkh_sub.h), clamped. */
+void hkh_engine_set_sub(hkh_engine *e, int index, float value);
 
 /* Discrete selections. `audition` plays the new sound once if the transport
  * is stopped, so a model can be chosen by ear. */

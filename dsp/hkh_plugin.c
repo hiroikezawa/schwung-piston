@@ -19,7 +19,7 @@ _Static_assert(ATOMIC_INT_LOCK_FREE == 2, "instance pool needs lock-free atomics
 
 /* Four chain slots can each hold one; two spare cover a swap in flight. */
 #define HKH_INSTANCES 6
-#define HKH_DSP_BUILD 904          /* major*10000 + minor*100 + patch: 0.9.4; bump with module.json */
+#define HKH_DSP_BUILD 1000         /* major*10000 + minor*100 + patch: 0.10.0; bump with module.json */
 
 /* The shim parks a slot whose output stays below 5 LSB for ~1 s and renders
  * it only once every ~0.5 s after that (schwung_shim.c, DSP_IDLE_THRESHOLD).
@@ -121,6 +121,12 @@ static int param_index(const char *key) {
 
 static int fx_index(const char *key) {
     for (int i = 0; i < FX_COUNT; ++i) if (!strcmp(key, hkh_fx_defs[i].key)) return i;
+    return -1;
+}
+
+/* PISTON SUB のパラメータ（"sub_on" ... "sub_duck"、hkh_sub.h の順）。 */
+static int sub_index(const char *key) {
+    for (int i = 0; i < SUB_COUNT; ++i) if (!strcmp(key, hkh_sub_keys[i])) return i;
     return -1;
 }
 
@@ -273,6 +279,16 @@ static int restore_state(hkh_engine *e, const char *text) {
         if (!has_rlp) rlp[i] = 1.0f;
         if (!(rlp[i] >= 0.0f && rlp[i] <= 1.0f)) return 0;
     }
+    /* PISTON SUB（0.10.0 から）："sub":[10 個、hkh_sub.h の順]。無い（それより
+     * 前の Set）なら初期値、つまり SUB OFF で、以前と同じ音のまま開く。 */
+    float subv[SUB_COUNT];
+    for (int i = 0; i < SUB_COUNT; ++i) subv[i] = hkh_sub_defaults[i];
+    if (find_key(p, "sub")) {
+        if (!read_key_array(p, "sub", subv, SUB_COUNT)) return 0;
+        if (!in_int_range(subv[SUB_ON], 0, 1) || !in_int_range(subv[SUB_MODE], 0, SUB_MODE_COUNT - 1) ||
+            !in_int_range(subv[SUB_TRIG], 0, 1)) return 0;
+        for (int i = SUB_LEVEL; i < SUB_COUNT; ++i) if (subv[i] < 0.0f || subv[i] > 1.0f) return 0;
+    }
     /* Kick and hat mutes, since 0.7.1; an older state restores unmuted. */
     float kmu = 0.0f, hmu = 0.0f;
     if (find_key(p, "kmu") && (!read_key_number(p, "kmu", &kmu) || !in_int_range(kmu, 0, 1))) return 0;
@@ -314,6 +330,7 @@ static int restore_state(hkh_engine *e, const char *text) {
     for (int k = 0; k < 4; ++k)
         for (int i = 0; i < HKH_RACK; ++i) hkh_engine_rack_set_send(e, i, k, sends[k][i]);
     for (int i = 0; i < HKH_RACK; ++i) hkh_engine_rack_set_lpf(e, i, rlp[i]);
+    for (int i = 0; i < SUB_COUNT; ++i) hkh_engine_set_sub(e, i, subv[i]);
     for (int i = 0; has_rack && i < HKH_RACK; ++i) {
         e->r_pattern[i] = (uint16_t)rp[i];
         e->r_vol[i] = rv[i];
@@ -324,10 +341,13 @@ static int restore_state(hkh_engine *e, const char *text) {
 /* ---- presets --------------------------------------------------------------
  * One voice's sound and pattern as a flat CSV the UI files away and hands
  * back. Mute and FILL are performance state and are not part of it.
- *   kick: km,ks,kp,<7 kick params>
+ *   kick: km,ks,kp,<7 kick params>[,<10 PISTON SUB values, hkh_sub.h order>]
  *   hat:  hm,hp,<7 hat params>,<16 motion, -1 none>
- * Applied only if every field parses, like the state blob. */
+ * Applied only if every field parses, like the state blob. A kick preset
+ * saved before 0.10.0 has no SUB part: it loads with SUB OFF (the rest of
+ * the SUB settings are left as they are), so it sounds as it was saved. */
 #define KICK_PRESET_FIELDS (3 + 7)
+#define KICK_PRESET_FIELDS_SUB (KICK_PRESET_FIELDS + SUB_COUNT)
 #define HAT_PRESET_FIELDS (2 + 7 + HKH_STEPS)
 
 static int read_csv(const char *s, float *out, int count) {
@@ -342,15 +362,24 @@ static int read_csv(const char *s, float *out, int count) {
 }
 
 static int apply_kick_preset(hkh_engine *e, const char *text) {
-    float f[KICK_PRESET_FIELDS];
-    if (!read_csv(text, f, KICK_PRESET_FIELDS)) return 0;
+    float f[KICK_PRESET_FIELDS_SUB];
+    int has_sub = read_csv(text, f, KICK_PRESET_FIELDS_SUB);
+    if (!has_sub && !read_csv(text, f, KICK_PRESET_FIELDS)) return 0;
     if (!in_int_range(f[0], 0, KICK_MODEL_COUNT - 1) || !in_int_range(f[1], 0, HKH_DIGITAL_COUNT - 1) ||
         !in_int_range(f[2], 0, 65535)) return 0;
     for (int i = 3; i < KICK_PRESET_FIELDS; ++i) if (f[i] < 0.0f || f[i] > 1.0f) return 0;
+    const float *sv = f + KICK_PRESET_FIELDS;
+    if (has_sub) {
+        if (!in_int_range(sv[SUB_ON], 0, 1) || !in_int_range(sv[SUB_MODE], 0, SUB_MODE_COUNT - 1) ||
+            !in_int_range(sv[SUB_TRIG], 0, 1)) return 0;
+        for (int i = SUB_LEVEL; i < SUB_COUNT; ++i) if (sv[i] < 0.0f || sv[i] > 1.0f) return 0;
+    }
     e->k_model = (int)f[0];
     e->k_sample = (int)f[1];
     e->k_pattern = (uint16_t)f[2];
     for (int i = 0; i < 7; ++i) hkh_engine_set_param(e, P_K_VOL + i, f[3 + i]);
+    if (has_sub) for (int i = 0; i < SUB_COUNT; ++i) hkh_engine_set_sub(e, i, sv[i]);
+    else hkh_engine_set_sub(e, SUB_ON, 0.0f);
     return 1;
 }
 
@@ -373,6 +402,8 @@ static int write_kick_preset(const hkh_engine *e, char *buf, int size) {
     int n = snprintf(buf, size, "%d,%d,%d", e->k_model, e->k_sample, e->k_pattern);
     for (int i = 0; i < 7 && n > 0 && n < size; ++i)
         n += snprintf(buf + n, size - n, ",%.4f", e->param[P_K_VOL + i]);
+    for (int i = 0; i < SUB_COUNT && n > 0 && n < size; ++i)
+        n += snprintf(buf + n, size - n, ",%.4f", e->voices.sub.prm[i]);
     if (n < 0 || n >= size) { buf[0] = 0; return -1; }
     return n;
 }
@@ -428,6 +459,8 @@ static void set_param(void *ptr, const char *key, const char *val) {
     if (idx >= 0) { if (parse_float(val, &f)) hkh_engine_set_param(e, idx, f); return; }
     int fi = fx_index(key);
     if (fi >= 0) { if (parse_float(val, &f)) hkh_engine_set_fx(e, fi, f); return; }
+    int si = sub_index(key);
+    if (si >= 0) { if (parse_float(val, &f)) hkh_engine_set_sub(e, si, f); return; }
 
     if (!strcmp(key, "mode")) { if (parse_int(val, 0, MODE_COUNT - 1, &n)) e->mode = n; }
     else if (!strcmp(key, "k_model")) { if (parse_int(val, 0, KICK_MODEL_COUNT - 1, &n)) hkh_engine_set_kick_model(e, n, 0); }
@@ -514,6 +547,11 @@ static int write_ui_state(hkh_instance *inst, char *buf, int size) {
     /* 259-290: rack LPF (0.8.2) */
     for (int i = 0; i < HKH_RACK && n > 0 && n < size; ++i)
         n += snprintf(buf + n, size - n, ",%d", milli(e->r_lpf[i]));
+    /* 291-300: PISTON SUB（0.10.0）：ON、MODE、TRIGGER はそのまま、残りの 7 つは
+     * ノブ位置 x1000 */
+    const hkh_sub *sb = &e->voices.sub;
+    for (int i = 0; i < SUB_COUNT && n > 0 && n < size; ++i)
+        n += snprintf(buf + n, size - n, ",%d", i <= SUB_TRIG ? (int)sb->prm[i] : milli(sb->prm[i]));
     if (n < 0 || n >= size) { buf[0] = 0; return -1; }
     return n;
 }
@@ -554,6 +592,9 @@ static int write_state(const hkh_engine *e, char *buf, int size) {
     if (n > 0 && n < size) n += snprintf(buf + n, size - n, "],\"rlp\":[");
     for (int i = 0; i < HKH_RACK && n > 0 && n < size; ++i)
         n += snprintf(buf + n, size - n, "%s%.4f", i ? "," : "", e->r_lpf[i]);
+    if (n > 0 && n < size) n += snprintf(buf + n, size - n, "],\"sub\":[");
+    for (int i = 0; i < SUB_COUNT && n > 0 && n < size; ++i)
+        n += snprintf(buf + n, size - n, "%s%.4f", i ? "," : "", e->voices.sub.prm[i]);
     if (n > 0 && n < size) n += snprintf(buf + n, size - n, "]}");
     if (n < 0 || n >= size) { buf[0] = 0; return -1; }
     return n;
@@ -569,6 +610,7 @@ static int get_param(void *ptr, const char *key, char *buf, int size) {
     int fi = fx_index(key);
     if (idx >= 0) n = snprintf(buf, size, "%.4f", e->param[idx]);
     else if (fi >= 0) n = snprintf(buf, size, "%.4f", e->fx[fi]);
+    else if (sub_index(key) >= 0) n = snprintf(buf, size, "%.4f", e->voices.sub.prm[sub_index(key)]);
     else if (!strcmp(key, "ui_state")) return write_ui_state(inst, buf, size);
     else if (!strcmp(key, "state")) return write_state(e, buf, size);
     else if (!strcmp(key, "k_preset")) return write_kick_preset(e, buf, size);
