@@ -1553,7 +1553,7 @@ static void sub_run(hkh_sub *s, int n, int kick_at, float bpm, float bpm2, int a
     for (int i = 0; i < n; ++i) {
         if (i % BLOCK == 0) hkh_sub_block(s, i >= at2 ? bpm2 : bpm, BLOCK);
         if (i == kick_at) hkh_sub_kick(s, 1.0f);
-        SB[i] = hkh_sub_tick(s);
+        SB[i] = hkh_sub_tick(s, 1.0f);
         assert(isfinite(SB[i]) && fabsf(SB[i]) <= 0.8f);
     }
 }
@@ -1661,7 +1661,7 @@ static void test_sub(void) {
         for (int i = 0; i < SUBN; ++i) {
             if (i % BLOCK == 0) hkh_sub_block(s, 120.0f, BLOCK);
             if (i % 1764 == 0) hkh_sub_kick(s, i % 3528 ? 0.6f : 1.0f);
-            SB[i] = hkh_sub_tick(s);
+            SB[i] = hkh_sub_tick(s, 1.0f);
             if (i) worst = fmaxf(worst, fabsf(SB[i] - SB[i - 1]));
         }
         assert(worst < (m == SUB_DIRTY ? 0.08f : 0.03f));
@@ -1696,7 +1696,7 @@ static void test_sub(void) {
             hkh_sub_block(s, 120.0f, BLOCK);
         }
         if (i == 0) hkh_sub_kick(s, 1.0f);
-        SB[i] = hkh_sub_tick(s);
+        SB[i] = hkh_sub_tick(s, 1.0f);
         if (i > 200) worst = fmaxf(worst, fabsf(SB[i] - SB[i - 1]));
     }
     assert(worst < 0.03f);
@@ -1718,7 +1718,7 @@ static void test_sub(void) {
         if (i == 4410) hkh_sub_set(s, SUB_MODE, SUB_DIRTY);
         if (i == 9000) hkh_sub_set(s, SUB_MODE, SUB_ANALOG);
         if (i == 13000) hkh_sub_set(s, SUB_MODE, SUB_DEEP);
-        SB[i] = hkh_sub_tick(s);
+        SB[i] = hkh_sub_tick(s, 1.0f);
     }
     assert(sub_max_step(1, 22050) <= dirty_own * 1.1f + 0.002f);
 
@@ -1732,7 +1732,7 @@ static void test_sub(void) {
     for (int i = 0; i < 4410; ++i) {
         if (i % BLOCK == 0) hkh_sub_block(s, 120.0f, BLOCK);
         if (i == 0) hkh_sub_kick(s, 1.0f);             /* the next kick */
-        SB[i] = hkh_sub_tick(s);
+        SB[i] = hkh_sub_tick(s, 1.0f);
     }
     assert(sub_rms(220, 880) < 0.1 * before);          /* ducked during the kick's attack */
     assert(sub_max_step(1, 4410) < 0.02f);             /* in and out without a click */
@@ -1746,7 +1746,7 @@ static void test_sub(void) {
     hkh_sub_set(s, SUB_ON, 0.0f);
     float prev = SB[4409], jump = 0;
     for (int i = 0; i < 2000; ++i) {
-        float x = hkh_sub_tick(s);
+        float x = hkh_sub_tick(s, 1.0f);
         jump = fmaxf(jump, fabsf(x - prev));
         prev = x;
         if (i > 600) assert(x == 0.0f);
@@ -1801,11 +1801,37 @@ static void test_sub(void) {
         t1.beat += BLOCK / spb(120.0f); t2.beat += BLOCK / spb(120.0f);
         assert(!memcmp(al, L, sizeof(al)) && !memcmp(ar, R, sizeof(ar)));
     }
+    /* the sub follows the kick VOL: x0.25 at half the default (squared
+     * taper), silent at 0 -- measured as what SUB ON adds to the output */
+    double add[3];
+    const float vols[3] = {0.8f, 0.4f, 0.0f};
+    for (int k = 0; k < 3; ++k) {
+        hkh_engine_init(&a, 5);
+        hkh_engine_init(&b, 5);
+        hkh_engine_set_param(&a, P_K_VOL, vols[k]);
+        hkh_engine_set_param(&b, P_K_VOL, vols[k]);
+        a.voices.kvol = b.voices.kvol = 1.6f * vols[k] * vols[k];   /* settled */
+        hkh_engine_set_sub(&b, SUB_ON, 1.0f);
+        hkh_engine_set_sub(&b, SUB_LEVEL, 0.3f);
+        double e = 0;
+        t1.beat = t2.beat = 0.0;
+        for (int blk = 0; blk < 300; ++blk) {
+            hkh_engine_render(&a, al, ar, BLOCK, t1.beat, 120.0f);
+            hkh_engine_render(&b, L, R, BLOCK, t2.beat, 120.0f);
+            t1.beat += BLOCK / spb(120.0f); t2.beat += BLOCK / spb(120.0f);
+            for (int i = 0; i < BLOCK; ++i) e += (L[i] - al[i]) * (L[i] - al[i]);
+        }
+        add[k] = sqrt(e);
+    }
+    assert(add[0] > 0.0 && add[1] > 0.18 * add[0] && add[1] < 0.32 * add[0]);
+    /* VOL 0: the sub adds nothing (what is left is the output DC blocker's
+     * own decay, computed while the idle fast path waits for the sub) */
+    assert(add[2] < 1e-3 * add[0]);
     /* kick mute chokes the sub with the kick */
     hkh_engine_set_mute(&b, 0, 1);
     assert(!hkh_sub_active(&b.voices.sub) || b.voices.sub.stage == 3);
     printf("PASS: PISTON SUB: OFF = untouched, A0/A1 steady, FOLLOW DELAY, OFFBEAT in beats, "
-           "no clicks, DRIVE level-matched, DUCK, centred, hat untouched\n");
+           "no clicks, DRIVE level-matched, DUCK, centred, follows kick VOL + mute, hat untouched\n");
 }
 
 int main(void) {

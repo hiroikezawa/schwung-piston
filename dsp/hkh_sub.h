@@ -93,8 +93,10 @@ void hkh_sub_choke(hkh_sub *s);
 void hkh_sub_transport_stopped(hkh_sub *s);
 /* ブロックの先頭で 1 回：パラメータの平滑化とテンポの反映。 */
 void hkh_sub_block(hkh_sub *s, float bpm, int frames);
-/* 1 サンプル分のモノラル出力。鳴っていなければ計算せずに 0。 */
-float hkh_sub_tick(hkh_sub *s);
+/* 1 サンプル分のモノラル出力。鳴っていなければ計算せずに 0。
+ * vol：外から掛ける音量（キックの VOL への追従）。SUB 専用の天井の前に
+ * 掛けるので、VOL を上げても天井を超えない。 */
+float hkh_sub_tick(hkh_sub *s, float vol);
 /* 鳴っている、または予約がある。 */
 int hkh_sub_active(const hkh_sub *s);
 

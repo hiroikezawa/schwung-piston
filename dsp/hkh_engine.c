@@ -32,6 +32,9 @@ const float hkh_param_defaults[P_COUNT] = {
  * more gain because a closed hat is short and sparse: at equal knob settings
  * the two voices then sit where a techno mix wants them. */
 static float kick_vol_gain(float v) { return 1.6f * v * v; }
+/* The kick VOL at its default: PISTON SUB's reference (it follows the
+ * kick VOL relative to this). */
+#define KICK_VOL_REF (1.6f * 0.80f * 0.80f)
 static float hat_vol_gain(float v) { return 8.0f * v * v; }
 /* The hat bus is soft-clipped at this ceiling AFTER its volume: a hat is all
  * crest, so more gain alone only feeds the limiter. Clipping the spikes lets
@@ -261,10 +264,13 @@ static void voices_tick(hkh_engine *e, float *l, float *r) {
     e->sc_gain += (1.0f - e->r_sc * e->sc_env - e->sc_gain) * SC_SMOOTH;
     rsl *= e->sc_gain;
     rsr *= e->sc_gain;
-    /* PISTON SUB: mono, the same into both sides (centre). Outside the kick
+    /* PISTON SUB: mono, the same into both sides (centre). It follows the
+     * kick VOL (the smoothed gain, so a turn never steps it): at VOL's
+     * default it is exactly LEVEL, and it scales with the kick from there,
+     * so LEVEL sets the sub against the kick. Outside the kick
      * bus's ceiling, so with SUB on the kick itself is not pushed harder;
      * with SUB off this adds exactly 0. */
-    float sb = hkh_sub_tick(&v->sub);
+    float sb = hkh_sub_tick(&v->sub, v->kvol * (1.0f / KICK_VOL_REF));
     float outl = kb + sb + h + rl + rsl, outr = kb + sb + h + rr + rsr;
     hkh_buscomp_tick(&v->bcomp, &outl, &outr);
     hkh_limiter_tick(&v->limiter, &outl, &outr);

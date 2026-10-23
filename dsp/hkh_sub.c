@@ -235,7 +235,7 @@ static void run_events(hkh_sub *s) {
     }
 }
 
-float hkh_sub_tick(hkh_sub *s) {
+float hkh_sub_tick(hkh_sub *s, float vol) {
     if (s->stage == 0 && s->n_ev == 0) return 0.0f;      /* OFF・休止中は何もしない */
     if (s->n_ev > 0) run_events(s);
 
@@ -310,7 +310,7 @@ float hkh_sub_tick(hkh_sub *s) {
     s->tone_y += (hp - s->tone_y) * s->tone_c;
 
     float mix = s->bal_sub * sub + s->bal_body * gain * s->tone_y;
-    float out = mix * s->env * (1.0f - s->duck_depth * s->duck) * s->level;
+    float out = mix * s->env * (1.0f - s->duck_depth * s->duck) * s->level * vol;
     out = hkh_tanh(out * (1.0f / SUB_CEILING)) * SUB_CEILING;
     if (!isfinite(out)) {           /* 万一の数値異常：鳴っている状態を捨てて黙る */
         drop_events(s, 0);
