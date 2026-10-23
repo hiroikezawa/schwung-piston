@@ -628,13 +628,13 @@ assert.equal(manifest.capabilities.ui_hierarchy, undefined, "a hierarchy would r
     assert(!r.keys().includes("k_step"), "a held SUB pad's steps are not kick steps");
     assert.equal(r.dsp.sub.sub_on, 1, "still ON");
     assert.equal(r.leds[stepPad(0, 8)], C.KICK, "steps are back");
-    /* page 2 = PISTON SUB: 7 knobs in real units, knob 8 still turns parts */
+    /* page 2 = PISTON SUB, drawn as page 1: MODE / TRIG on top, eight knob
+     * names with bars below; a touch shows the knob in real units */
+    r.t += 2000;                                  /* past the "SUB ON" flash */
     r.jog(1); r.tick();
     assert(r.printed.includes("PISTON SUB") && r.printed.includes("ON"));
-    for (const l of ["LEVEL", "S/B", "DECAY", "DELAY", "DRIVE", "TONE", "DUCK"]) assert(r.printed.includes(l), l);
-    assert(r.printed.includes("70%") && r.printed.includes("350"), r.printed.join("|"));
-    assert(r.printed.includes("-"), "DELAY unused on OFFBEAT");
-    assert(r.printed.includes("DIRTY OFFBEAT"));
+    for (const l of ["LVL", "S/B", "DEC", "DLY", "DRV", "TONE", "DUCK", "PAGE"]) assert(r.printed.includes(l), l);
+    assert(r.printed.includes("DIRTY") && r.printed.includes("OFFBEAT") && r.printed.includes("8 STEPS"));
     r.clear();
     r.turn(0, 20); r.tick();
     assert.equal(r.last()[0], "sub_level");
@@ -646,19 +646,24 @@ assert.equal(manifest.capabilities.ui_hierarchy, undefined, "a hierarchy would r
     assert(r.printed.includes("50ms") && r.printed.includes("3 DECAY"));
     r.touch(2, false);
     assert(!r.keys().includes("k_decay") && !r.keys().includes("h_motion_rec"));
+    r.touch(3, true); r.tick();
+    assert(r.printed.includes("OFFBEAT: unused"), "DELAY unused on OFFBEAT");
+    r.touch(3, false);
+    r.touch(1, true); r.tick();
+    assert(r.printed.includes("2 SUB/BODY") && r.printed.includes("70/30"));
+    r.touch(1, false);
     r.clear();
     r.turn(7, 1); r.tick();                       /* knob 8: no knob of its own */
     assert(!r.keys().some((k) => k.startsWith("sub_")));
     /* the SUB pad works here too, and its choices replace the knobs */
+    r.t += 2000;
     r.press(SUBPAD); r.tick();
-    assert(r.printed.includes("DEEP") && !r.printed.includes("LEVEL"));
+    assert(r.printed.includes("DEEP") && !r.printed.includes("LVL"));
     r.tap(stepPad(4, 8)); r.release(SUBPAD); r.tick();
     assert.equal(r.dsp.sub.sub_trig, 0);
-    r.t += 2000; r.tick();
-    assert(r.printed.includes("25"), "FOLLOW: DELAY in ms again");
-    /* every cell fits its 31-pixel column (5 px a character here) */
-    r.dsp.sub.sub_bal = 1; r.dsp.sub.sub_decay = 1; r.dsp.sub.sub_delay = 1; r.tick(4);
-    for (const t of r.printed.slice(2, 16)) assert(t.length * 5 <= 31 || t.includes(" "), t);
+    r.t += 2000; r.touch(3, true); r.tick();
+    assert(r.printed.includes("25ms"), "FOLLOW: DELAY in ms again");
+    r.touch(3, false);
     /* knob 8 from the SUB page goes to the next part's effects page */
     r.page(1); r.tick();
     assert(r.printed.includes("HAT FX"));

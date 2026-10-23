@@ -160,6 +160,8 @@ export const SUB_DEFS = {
     sub_duck: { min: 0, max: 1, res: 0.001, label: "DUCK", name: "DUCK", show: pct },
 };
 export const SUB_KNOBS = ["sub_level", "sub_bal", "sub_decay", "sub_delay", "sub_drive", "sub_tone", "sub_duck", null];
+/* 1ページ目と同じ形で並べる短いノブ名（ノブ8はパートの切り替え）。 */
+export const SUB_LABELS = ["LVL", "S/B", "DEC", "DLY", "DRV", "TONE", "DUCK", "PAGE"];
 export const SUB_TITLE = "PISTON SUB";
 /* SUB パッドを押さえている間、ステップに並ぶ選択肢：1-3 = MODE、5-6 = TRIGGER。 */
 export const SUB_PICK_MODE = [0, 1, 2];
@@ -1012,6 +1014,7 @@ export function createUi(host) {
         if (s.rec && (tickCount >> 4) % 2 === 0) info = "REC " + info;
         if (page === 0) g.print(126 - tw(info), 2, info, 0);
 
+        if (subPage) { drawSub(g, tw); dirty = false; return; }
         if (page > 0) { drawFx(g, tw); dirty = false; return; }
 
         if (rack) { drawRack(g, tw); dirty = false; return; }
@@ -1112,24 +1115,59 @@ export function createUi(host) {
         });
     }
 
-    /* Page 2 (KICK: pages 2-3): the page's knobs, and the shared 8 / 16 steps (jog click). */
-    function drawFx(g, tw) {
-        const { keys, defs, vals } = pageKnobs();
-        const subPage = keys === SUB_KNOBS;
+    /* PISTON SUB のページ：1ページ目と同じ形。上に MODE / TRIGGER と
+     * ステップ数、下にノブ8つ（名前とバー、ノブ8はパートの切り替え）。
+     * ノブに触ると、そのノブを名前・実際の値・バーで大きく出す。 */
+    function drawSub(g, tw) {
+        const sub = s.sub;
+        g.print(0, 15, "MODE", 1);
+        g.print(34, 15, SUB_MODES[sub.sub_mode] || "?", 1);
+        g.print(0, 25, "TRIG", 1);
+        g.print(34, 25, SUB_TRIGS[sub.sub_trig] || "?", 1);
+        const st = `${s.len} STEPS`;
+        g.print(126 - tw(st), 25, st, 1);
+
         const now = host.now();
         const bigKnob = touched >= 0 ? touched : (now < touchShowUntil ? lastTouchKnob : -1);
-        if (subPage && ui.sel === "sub") {
-            drawSubPicker(g, tw, 20);
+        if (ui.sel === "sub") {
+            drawSubPicker(g, tw, 38);
+        } else if (now < flashUntil) {
+            g.fillRect(0, 40, 128, 16, 1);
+            g.print(Math.max(1, Math.floor((128 - tw(flash)) / 2)), 44, flash, 0);
         } else if (bigKnob >= 0 && bigKnob < 7) {
+            const key = SUB_KNOBS[bigKnob], def = SUB_DEFS[key], v = sub[key];
+            const txt = def.show(v, s);
+            g.print(0, 38, `${bigKnob + 1} ${def.name}`, 1);
+            g.print(126 - tw(txt), 38, txt, 1);
+            g.drawRect(0, 48, 128, 12, 1);
+            g.fillRect(2, 50, Math.round(124 * Math.min(1, Math.max(0, v))), 8, 1);
+        } else {
+            /* All eight knobs, two rows of four, as on page 1. */
+            for (let k = 0; k < 8; k++) {
+                const x = (k % 4) * 32, y = k < 4 ? 37 : 51;
+                g.print(x + 1, y, SUB_LABELS[k], 1);
+                const key = SUB_KNOBS[k];
+                if (key) {
+                    g.drawRect(x + 1, y + 9, 29, 4, 1);
+                    g.fillRect(x + 1, y + 9, Math.round(29 * sub[key]), 4, 1);
+                }
+            }
+        }
+    }
+
+    /* Page 2 (KICK: page 3): the part's effect knobs, and the shared 8 / 16 steps (jog click). */
+    function drawFx(g, tw) {
+        const keys = FX_KNOBS[s.mode] || [];
+        const now = host.now();
+        const bigKnob = touched >= 0 ? touched : (now < touchShowUntil ? lastTouchKnob : -1);
+        if (bigKnob >= 0 && bigKnob < 7) {
             const key = keys[bigKnob];
             if (key) {
-                const def = defs[key], v = vals[key];
-                const txt = subPage ? def.show(v, s) : fxText(key, v);
-                g.print(0, 16, `${bigKnob + 1} ${def.name}`, 1);
+                const v = s.fx[key], txt = fxText(key, v);
+                g.print(0, 16, `${bigKnob + 1} ${FX_DEFS[key].name}`, 1);
                 g.print(126 - tw(txt), 16, txt, 1);
                 g.drawRect(0, 28, 128, 12, 1);
-                const pos = subPage ? v : fxPos(key, v);
-                g.fillRect(2, 30, Math.round(124 * Math.min(1, Math.max(0, pos))), 8, 1);
+                g.fillRect(2, 30, Math.round(124 * Math.min(1, Math.max(0, fxPos(key, v)))), 8, 1);
                 if (key === "bc_punch" && s.bcLim) g.print(0, 44, "PUNCH IS LIMITING", 1);
             } else {
                 g.print(0, 16, `${bigKnob + 1} not assigned`, 1);
@@ -1143,21 +1181,14 @@ export function createUi(host) {
                 /* the label inverted in its own 31-pixel box: the columns
                  * read as columns even where two long labels sit side by side */
                 g.fillRect(x, y - 1, 31, 9, 1);
-                g.print(x + 1, y, defs[key].label, 0);
-                let txt = subPage ? (defs[key].cell ? defs[key].cell(vals[key], s) : defs[key].show(vals[key], s))
-                    : fxCellText(key, s.fx[key]);
+                g.print(x + 1, y, FX_DEFS[key].label, 0);
+                let txt = fxCellText(key, s.fx[key]);
                 if (key === "bc_punch" && s.bcLim) txt += "*";
                 g.print(x + 1, y + 9, txt, 1);
             }
         }
-        /* bottom line: SUB の状態、または共通のステップ数（ジョグクリックで 8 / 16） */
-        if (subPage) {
-            g.print(0, 56, `${SUB_MODES[s.sub.sub_mode] || "?"} ${SUB_TRIGS[s.sub.sub_trig] || "?"}`, 1);
-            const st = `STEPS ${s.len}`;
-            g.print(126 - tw(st), 56, st, 1);
-        } else {
-            g.print(0, 56, `STEPS ${s.len}  click: 8/16`, 1);
-        }
+        /* bottom line: the shared step length, switched with a jog click */
+        g.print(0, 56, `STEPS ${s.len}  click: 8/16`, 1);
     }
 
     /* The rack: the 6 x 4 block as on the pads, or a held pad's detail. */
