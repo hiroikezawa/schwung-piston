@@ -148,5 +148,41 @@ int main(int argc, char **argv) {
         render(&run, bars(1, 130));
     }
     save("rumble_sweep_909");
+
+    /* RUMBLE 0.11.0: four-on-the-floor 909 at 132 / 136 / 140 BPM, kick and
+     * rumble only, DEFINITION 0 / 50 / 100 % (the rest at its defaults), four
+     * bars each: "zu-bo-bo-bo" against the diffuse rumble. */
+    const float tempos[] = {132.0f, 136.0f, 140.0f};
+    const float defs[] = {0.0f, 0.5f, 1.0f};
+    for (int t = 0; t < 3; ++t) {
+        for (int d = 0; d < 3; ++d) {
+            transport tr = {0, tempos[t], 1};
+            hkh_engine_init(&E, 11);
+            E.h_pattern = 0;
+            hkh_engine_set_rumble(&E, RB_DEF, defs[d]);
+            render(&tr, bars(4, tempos[t]));
+            char name[64];
+            snprintf(name, sizeof(name), "rumble_%.0fbpm_def%03.0f", tempos[t], defs[d] * 100.0f);
+            save(name);
+        }
+    }
+    /* The default sound at 136 BPM with the hats, as a new Set plays it. */
+    {
+        transport tr = {0, 136.0f, 1};
+        hkh_engine_init(&E, 11);
+        render(&tr, bars(4, 136.0f));
+        save("rumble_136bpm_default_groove");
+    }
+    /* DEFINITION swept 0 -> 100 % over eight bars at 136 BPM. */
+    {
+        transport tr = {0, 136.0f, 1};
+        hkh_engine_init(&E, 11);
+        E.h_pattern = 0;
+        for (int b = 0; b < 8; ++b) {
+            hkh_engine_set_rumble(&E, RB_DEF, b / 7.0f);
+            render(&tr, bars(1, 136.0f));
+        }
+        save("rumble_136bpm_definition_sweep");
+    }
     return 0;
 }

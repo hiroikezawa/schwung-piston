@@ -89,10 +89,31 @@
       ]
     },
     {
-      "title": "Page 2 FX",
+      "title": "Rumble",
       "lines": [
-        "Turn the jog: page 2",
-        "of KICK / HAT / RACK.",
+        "KICK page 2 (jog).",
+        "The kick itself,",
+        "  repeated on a",
+        "  tempo-synced delay:",
+        "  zu-bo-bo-bo.",
+        "1 RMB  amount",
+        "2 DLY  1/8 1/16 1/32",
+        "3 FB   how many bo's",
+        "4 DEF  0 = diffuse",
+        "       100 = clear",
+        "5 DAMP darker, rounder",
+        "6 DUCK clears the kick",
+        "Defaults: 50% 1/16",
+        "  FB 60 DEF 75",
+        "  DAMP 70 DUCK 80"
+      ]
+    },
+    {
+      "title": "FX pages",
+      "lines": [
+        "Turn the jog: KICK",
+        "  pg2 RUMBLE, pg3 FX;",
+        "  HAT / RACK pg2 FX.",
         "Jog click: 8/16 steps",
         "All FX start OFF.",
         "",
