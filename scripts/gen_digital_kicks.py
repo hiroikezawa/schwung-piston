@@ -33,15 +33,22 @@ class Noise:
         return self.s / 0x3FFFFFFF - 1.0
 
 
-# Every kick settles on A1 or C1, whichever is nearer its original pitch;
-# the whole sweep is transposed with it (the shape and timing stay).
-A1, C1 = 55.0, 32.703
+# Every kick is in C (0.11.0): SUB settles on C1, the other four on C2.
+# 0.9.x had them on A1 (the whole sweep transposed there from each kick's
+# original pitch); `settle` still does that first. `land` then lifts only the
+# FLOOR to C2: the dive starts where it did on A1, so the attack is the same
+# sound, and the two sweep terms shrink in proportion to end there.
+A1, C1, C2 = 55.0, 32.703, 65.406
 
 
-def sweep_kick(seconds, f_end, f_sweep, tau_sweep, f_slow, tau_slow, t60, attack=0.0003, settle=None):
+def sweep_kick(seconds, f_end, f_sweep, tau_sweep, f_slow, tau_slow, t60, attack=0.0003, settle=None, land=None):
     if settle is not None:
         r = settle / f_end
         f_end, f_sweep, f_slow = settle, f_sweep * r, f_slow * r
+    if land is not None:
+        start = f_end + f_sweep + f_slow
+        r = (start - land) / (start - f_end)
+        f_end, f_sweep, f_slow = land, f_sweep * r, f_slow * r
     out, ph = [], 0.0
     k = 6.9078 / t60
     for i in range(int(seconds * SR)):
@@ -55,7 +62,7 @@ def sweep_kick(seconds, f_end, f_sweep, tau_sweep, f_slow, tau_slow, t60, attack
 
 def punch():
     n = Noise(1)
-    body = sweep_kick(0.45, 52, 130, 0.012, 22, 0.06, 0.32, settle=A1)      # was 52 Hz
+    body = sweep_kick(0.45, 52, 130, 0.012, 22, 0.06, 0.32, settle=A1, land=C2)   # 52 Hz -> A1 -> C2
     out, prev = [], 0.0
     for i, b in enumerate(body):
         t = i / SR
@@ -78,7 +85,7 @@ def sub():
 
 
 def crush():
-    body = sweep_kick(0.4, 56, 160, 0.010, 30, 0.05, 0.26, settle=A1)       # was 56 Hz
+    body = sweep_kick(0.4, 56, 160, 0.010, 30, 0.05, 0.26, settle=A1, land=C2)  # 56 Hz -> A1 -> C2
     out, held = [], 0.0
     for i, b in enumerate(body):
         if i % 4 == 0:                        # 11025 Hz sample-and-hold
@@ -88,7 +95,7 @@ def crush():
 
 
 def hard():
-    body = sweep_kick(0.5, 55, 245, 0.025, 40, 0.08, 0.38, settle=A1)       # already A1
+    body = sweep_kick(0.5, 55, 245, 0.025, 40, 0.08, 0.38, settle=A1, land=C2)  # A1 -> C2
     out, lp = [], 0.0
     a = 1 - math.exp(-2 * math.pi * 5000 / SR)
     for b in body:
@@ -101,10 +108,10 @@ def hard():
 def gabber():
     """The gabber kick: a fast, deep 909-style dive whose body decays slowly
     (t60 0.9 s), driven ~22 dB into an asymmetric tanh and then hard-clipped,
-    so the whole tail stays a fat, buzzing near-square on A1. The asymmetry
+    so the whole tail stays a fat, buzzing near-square on C2. The asymmetry
     adds the even harmonics of an overdriven pedal; its DC is removed (20 Hz
     one-pole high-pass) and the fizz above ~9 kHz rounded off (one-pole)."""
-    body = sweep_kick(0.9, 55, 170, 0.012, 30, 0.06, 0.9, settle=A1)
+    body = sweep_kick(0.9, 55, 170, 0.012, 30, 0.06, 0.9, settle=A1, land=C2)
     out, hp_x, hp_y, lp = [], 0.0, 0.0, 0.0
     r = math.exp(-2 * math.pi * 20 / SR)
     a = 1 - math.exp(-2 * math.pi * 9000 / SR)

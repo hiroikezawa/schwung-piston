@@ -19,7 +19,7 @@ _Static_assert(ATOMIC_INT_LOCK_FREE == 2, "instance pool needs lock-free atomics
 
 /* Four chain slots can each hold one; two spare cover a swap in flight. */
 #define HKH_INSTANCES 6
-#define HKH_DSP_BUILD 904          /* major*10000 + minor*100 + patch: 0.9.4; bump with module.json */
+#define HKH_DSP_BUILD 1100         /* major*10000 + minor*100 + patch: 0.11.0; bump with module.json */
 
 /* The shim parks a slot whose output stays below 5 LSB for ~1 s and renders
  * it only once every ~0.5 s after that (schwung_shim.c, DSP_IDLE_THRESHOLD).
@@ -124,6 +124,12 @@ static int fx_index(const char *key) {
     return -1;
 }
 
+/* RUMBLE's page: "rb_delay" ... "rb_duck", in hkh_fx.h order. */
+static int rb_index(const char *key) {
+    for (int i = 0; i < RB_COUNT; ++i) if (!strcmp(key, hkh_rb_keys[i])) return i;
+    return -1;
+}
+
 static const char *skip_ws(const char *p) {
     while (*p && isspace((unsigned char)*p)) ++p;
     return p;
@@ -220,6 +226,16 @@ static int in_int_range(float v, int lo, int hi) {
     return v == floorf(v) && v >= (float)lo && v <= (float)hi;
 }
 
+static int rb_valid(const float *v) {
+    if (!in_int_range(v[RB_DELAY], 0, RB_DIV_COUNT - 1)) return 0;
+    for (int i = RB_FB; i < RB_COUNT; ++i) if (!(v[i] >= 0.0f && v[i] <= 1.0f)) return 0;
+    return 1;
+}
+
+static int read_rb(const char *p, float *v) {
+    return read_key_array(p, "rb", v, RB_COUNT) && rb_valid(v);
+}
+
 static int restore_state(hkh_engine *e, const char *text) {
     if (!text || strlen(text) > HKH_STATE_MAX) return 0;
     const char *p = skip_ws(text);
@@ -273,6 +289,12 @@ static int restore_state(hkh_engine *e, const char *text) {
         if (!has_rlp) rlp[i] = 1.0f;
         if (!(rlp[i] >= 0.0f && rlp[i] <= 1.0f)) return 0;
     }
+    /* RUMBLE's page (0.11.0): "rb":[5, hkh_fx.h order]. A state without it
+     * (an older Set, or 0.10.0's, whose "sub" is ignored) gets the legacy
+     * values, at which RUMBLE sounds exactly as it did. */
+    float rbv[RB_COUNT];
+    for (int i = 0; i < RB_COUNT; ++i) rbv[i] = hkh_rb_legacy[i];
+    if (find_key(p, "rb") && !read_rb(p, rbv)) return 0;
     /* Kick and hat mutes, since 0.7.1; an older state restores unmuted. */
     float kmu = 0.0f, hmu = 0.0f;
     if (find_key(p, "kmu") && (!read_key_number(p, "kmu", &kmu) || !in_int_range(kmu, 0, 1))) return 0;
@@ -314,6 +336,7 @@ static int restore_state(hkh_engine *e, const char *text) {
     for (int k = 0; k < 4; ++k)
         for (int i = 0; i < HKH_RACK; ++i) hkh_engine_rack_set_send(e, i, k, sends[k][i]);
     for (int i = 0; i < HKH_RACK; ++i) hkh_engine_rack_set_lpf(e, i, rlp[i]);
+    for (int i = 0; i < RB_COUNT; ++i) hkh_engine_set_rumble(e, i, rbv[i]);
     for (int i = 0; has_rack && i < HKH_RACK; ++i) {
         e->r_pattern[i] = (uint16_t)rp[i];
         e->r_vol[i] = rv[i];
@@ -324,10 +347,15 @@ static int restore_state(hkh_engine *e, const char *text) {
 /* ---- presets --------------------------------------------------------------
  * One voice's sound and pattern as a flat CSV the UI files away and hands
  * back. Mute and FILL are performance state and are not part of it.
- *   kick: km,ks,kp,<7 kick params>
+ *   kick: km,ks,kp,<7 kick params>,<5 RUMBLE page values, hkh_fx.h order>
  *   hat:  hm,hp,<7 hat params>,<16 motion, -1 none>
- * Applied only if every field parses, like the state blob. */
+ * Applied only if every field parses, like the state blob. A kick preset
+ * from before 0.11.0 is 10 fields (or 20: 0.10.0 appended PISTON SUB's ten,
+ * which are ignored); it loads RUMBLE's legacy values, so its RUMBLE sounds
+ * as it was saved. */
 #define KICK_PRESET_FIELDS (3 + 7)
+#define KICK_PRESET_FIELDS_RB (KICK_PRESET_FIELDS + RB_COUNT)
+#define KICK_PRESET_FIELDS_SUB (KICK_PRESET_FIELDS + 10)
 #define HAT_PRESET_FIELDS (2 + 7 + HKH_STEPS)
 
 static int read_csv(const char *s, float *out, int count) {
@@ -342,15 +370,20 @@ static int read_csv(const char *s, float *out, int count) {
 }
 
 static int apply_kick_preset(hkh_engine *e, const char *text) {
-    float f[KICK_PRESET_FIELDS];
-    if (!read_csv(text, f, KICK_PRESET_FIELDS)) return 0;
+    float f[KICK_PRESET_FIELDS_SUB];
+    int has_rb = read_csv(text, f, KICK_PRESET_FIELDS_RB);
+    if (!has_rb && !read_csv(text, f, KICK_PRESET_FIELDS) &&
+        !read_csv(text, f, KICK_PRESET_FIELDS_SUB)) return 0;
     if (!in_int_range(f[0], 0, KICK_MODEL_COUNT - 1) || !in_int_range(f[1], 0, HKH_DIGITAL_COUNT - 1) ||
         !in_int_range(f[2], 0, 65535)) return 0;
     for (int i = 3; i < KICK_PRESET_FIELDS; ++i) if (f[i] < 0.0f || f[i] > 1.0f) return 0;
+    const float *rb = has_rb ? f + KICK_PRESET_FIELDS : hkh_rb_legacy;
+    if (!rb_valid(rb)) return 0;
     e->k_model = (int)f[0];
     e->k_sample = (int)f[1];
     e->k_pattern = (uint16_t)f[2];
     for (int i = 0; i < 7; ++i) hkh_engine_set_param(e, P_K_VOL + i, f[3 + i]);
+    for (int i = 0; i < RB_COUNT; ++i) hkh_engine_set_rumble(e, i, rb[i]);
     return 1;
 }
 
@@ -373,6 +406,8 @@ static int write_kick_preset(const hkh_engine *e, char *buf, int size) {
     int n = snprintf(buf, size, "%d,%d,%d", e->k_model, e->k_sample, e->k_pattern);
     for (int i = 0; i < 7 && n > 0 && n < size; ++i)
         n += snprintf(buf + n, size - n, ",%.4f", e->param[P_K_VOL + i]);
+    for (int i = 0; i < RB_COUNT && n > 0 && n < size; ++i)
+        n += snprintf(buf + n, size - n, i == RB_DELAY ? ",%.0f" : ",%.4f", e->voices.rumble.prm[i]);
     if (n < 0 || n >= size) { buf[0] = 0; return -1; }
     return n;
 }
@@ -428,6 +463,8 @@ static void set_param(void *ptr, const char *key, const char *val) {
     if (idx >= 0) { if (parse_float(val, &f)) hkh_engine_set_param(e, idx, f); return; }
     int fi = fx_index(key);
     if (fi >= 0) { if (parse_float(val, &f)) hkh_engine_set_fx(e, fi, f); return; }
+    int ri = rb_index(key);
+    if (ri >= 0) { if (parse_float(val, &f)) hkh_engine_set_rumble(e, ri, f); return; }
 
     if (!strcmp(key, "mode")) { if (parse_int(val, 0, MODE_COUNT - 1, &n)) e->mode = n; }
     else if (!strcmp(key, "k_model")) { if (parse_int(val, 0, KICK_MODEL_COUNT - 1, &n)) hkh_engine_set_kick_model(e, n, 0); }
@@ -514,6 +551,10 @@ static int write_ui_state(hkh_instance *inst, char *buf, int size) {
     /* 259-290: rack LPF (0.8.2) */
     for (int i = 0; i < HKH_RACK && n > 0 && n < size; ++i)
         n += snprintf(buf + n, size - n, ",%d", milli(e->r_lpf[i]));
+    /* 291-295: RUMBLE's page (0.11.0): DELAY as its index, the rest x1000 */
+    const hkh_rumble *rb = &e->voices.rumble;
+    for (int i = 0; i < RB_COUNT && n > 0 && n < size; ++i)
+        n += snprintf(buf + n, size - n, ",%d", i == RB_DELAY ? (int)rb->prm[i] : milli(rb->prm[i]));
     if (n < 0 || n >= size) { buf[0] = 0; return -1; }
     return n;
 }
@@ -554,6 +595,9 @@ static int write_state(const hkh_engine *e, char *buf, int size) {
     if (n > 0 && n < size) n += snprintf(buf + n, size - n, "],\"rlp\":[");
     for (int i = 0; i < HKH_RACK && n > 0 && n < size; ++i)
         n += snprintf(buf + n, size - n, "%s%.4f", i ? "," : "", e->r_lpf[i]);
+    if (n > 0 && n < size) n += snprintf(buf + n, size - n, "],\"rb\":[");
+    for (int i = 0; i < RB_COUNT && n > 0 && n < size; ++i)
+        n += snprintf(buf + n, size - n, "%s%.4f", i ? "," : "", e->voices.rumble.prm[i]);
     if (n > 0 && n < size) n += snprintf(buf + n, size - n, "]}");
     if (n < 0 || n >= size) { buf[0] = 0; return -1; }
     return n;
@@ -569,6 +613,7 @@ static int get_param(void *ptr, const char *key, char *buf, int size) {
     int fi = fx_index(key);
     if (idx >= 0) n = snprintf(buf, size, "%.4f", e->param[idx]);
     else if (fi >= 0) n = snprintf(buf, size, "%.4f", e->fx[fi]);
+    else if (rb_index(key) >= 0) n = snprintf(buf, size, "%.4f", e->voices.rumble.prm[rb_index(key)]);
     else if (!strcmp(key, "ui_state")) return write_ui_state(inst, buf, size);
     else if (!strcmp(key, "state")) return write_state(e, buf, size);
     else if (!strcmp(key, "k_preset")) return write_kick_preset(e, buf, size);

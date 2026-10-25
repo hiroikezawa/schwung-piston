@@ -7,6 +7,7 @@
 #include "../dsp/hkh_samples.h"
 #include "../dsp/hkh_hat.h"
 #include "../dsp/hkh_pattern.h"
+#include "ref_rumble_v094.h"
 #include <stdint.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -1541,7 +1542,317 @@ static void test_rack(void) {
     printf("PASS: rack: per-pad steps, mute, empty pads, volume, 16-step carry, dotted-1/8 delay\n");
 }
 
+/* ---- C tuning (0.11.0) ---------------------------------------------------- */
+/* Mean frequency over [from, from + span) by rising zero crossings. */
+static double zc_freq(const float *x, int n, int from, int span) {
+    int first = -1, last = -1, cnt = 0;
+    for (int i = from; i < from + span && i + 1 < n; ++i)
+        if (x[i] <= 0.0f && x[i + 1] > 0.0f) { if (first < 0) first = i; last = i; ++cnt; }
+    return cnt > 1 ? 44100.0 * (cnt - 1) / (last - first) : 0.0;
+}
+
+static float TUNE[44100];
+static void test_kick_tuning(void) {
+    /* Analog: 300-500 ms after the hit each model sits on C2 (65.406 Hz). */
+    for (int m = 0; m < 3; ++m) {
+        hkh_akick k;
+        hkh_akick_init(&k, 1);
+        hkh_akick_trigger(&k, m, 1.0f, 0.9f);
+        for (int i = 0; i < 44100; ++i) {
+            if (i % BLOCK == 0) hkh_akick_block(&k, 0.9f);
+            TUNE[i] = hkh_akick_tick(&k);
+        }
+        double f = zc_freq(TUNE, 44100, 13230, 8820);
+        printf("  analog kick %d settles at %.2f Hz\n", m, f);
+        assert(fabs(f - 65.406) < 0.02 * 65.406);
+    }
+    /* Digital: PUNCH, CRUSH, HARD, GABBER on C2, SUB on C1. */
+    static const double want[HKH_DIGITAL_COUNT] = {65.406, 32.703, 65.406, 65.406, 65.406};
+    for (int i = 0; i < HKH_DIGITAL_COUNT; ++i) {
+        hkh_sample_ref r = hkh_default_sample(i);
+        int n = r.len < 44100 ? r.len : 44100;
+        for (int j = 0; j < n; ++j) TUNE[j] = r.data[j] / 32767.0f;
+        /* SUB is slow; CRUSH's 6-bit words reach zero by ~200 ms, so it is
+         * read earlier, still a little above its floor. */
+        int from = i == 1 ? 17640 : i == 2 ? 4410 : 8820, span = i == 1 ? 13230 : 4410;
+        double tol = i == 2 ? 0.08 : 0.03;
+        double f = zc_freq(TUNE, n, from, span);
+        printf("  digital kick %d settles at %.2f Hz\n", i, f);
+        assert(fabs(f - want[i]) < tol * want[i]);
+    }
+    printf("PASS: every kick is in C: 808/909/IND and PUNCH/CRUSH/HARD/GABBER on C2, SUB on C1\n");
+}
+
+/* ---- RUMBLE (0.11.0) ------------------------------------------------------- */
+#define RB_SECONDS 12
+static float RBK[44100 * RB_SECONDS], RBO[44100 * RB_SECONDS];
+
+/* A 909 (or `model`) every beat at `bpm`, through RUMBLE; the kick into RBK,
+ * the rumble out into RBO. Returns the samples rendered. */
+static int rumble_run(hkh_rumble *r, int model, float bpm, float amount, int seconds) {
+    hkh_akick k;
+    hkh_akick_init(&k, 1);
+    double spbeat = spb(bpm);
+    int n = 44100 * seconds;
+    long next = 0;
+    const float kvol = 1.6f * 0.8f * 0.8f;          /* VOL at its default */
+    for (int i = 0; i < n; ++i) {
+        if (i % BLOCK == 0) { hkh_akick_block(&k, 0.5f); hkh_rumble_block(r, amount, bpm, BLOCK); }
+        if (i == (int)lround(next * spbeat)) { hkh_akick_trigger(&k, model, 1.0f, 0.5f); hkh_rumble_trigger(r); ++next; }
+        RBK[i] = hkh_akick_tick(&k) * kvol;
+        RBO[i] = hkh_rumble_tick(r, RBK[i]);
+        assert(isfinite(RBO[i]));
+    }
+    return n;
+}
+
+static double rms_db(const float *x, int a, int b) {
+    double s = 0.0;
+    for (int i = a; i < b; ++i) s += (double)x[i] * x[i];
+    return 10.0 * log10(s / (b - a) + 1e-20);
+}
+
+/* Each 16th of beat `beat`: the body level of what is there (10-60 % of
+ * the 16th) and the quietest 5 ms in its last 40 %. */
+static void sixteenths(float bpm, int beat, double body[4], double gap[4]) {
+    double b0 = beat * spb(bpm), D = spb(bpm) / 4.0;
+    for (int q = 0; q < 4; ++q) {
+        int s0 = (int)(b0 + q * D);
+        body[q] = rms_db(RBO, s0 + (int)(0.1 * D), s0 + (int)(0.6 * D));
+        gap[q] = 1e9;
+        for (int i = s0 + (int)(0.6 * D); i + 220 < s0 + (int)D; i += 55) {
+            double g = rms_db(RBO, i, i + 220);
+            if (g < gap[q]) gap[q] = g;
+        }
+    }
+}
+
+static hkh_rumble RB, RB2;
+static ref_rumble RBREF;
+
+static void test_rumble_legacy(void) {
+    /* An older Set (no "rb") loads the legacy values: the output must be the
+     * 0.9.4 RUMBLE sample for sample, with RUMBLE moving and the tempo too. */
+    hkh_rumble_init(&RB);
+    for (int i = 0; i < RB_COUNT; ++i) hkh_rumble_set(&RB, i, hkh_rb_legacy[i]);
+    for (int b = 0; b < 40; ++b) hkh_rumble_block(&RB, 0.0f, 120.0f, BLOCK);   /* knobs land */
+    ref_rumble_init(&RBREF);
+    hkh_akick k;
+    hkh_akick_init(&k, 1);
+    long diffs = 0;
+    for (int i = 0; i < 44100 * 8; ++i) {
+        float amount = i < 44100 * 2 ? 0.35f : i < 44100 * 5 ? 1.0f : 0.6f;
+        float bpm = i < 44100 * 4 ? 136.0f : 128.0f;
+        if (i % BLOCK == 0) {
+            hkh_akick_block(&k, 0.6f);
+            hkh_rumble_block(&RB, amount, bpm, BLOCK);
+            ref_rumble_block(&RBREF, amount, BLOCK);
+        }
+        if (i % 19455 == 0) { hkh_akick_trigger(&k, (i / 19455) % 3, 1.0f, 0.6f); hkh_rumble_trigger(&RB); }
+        float x = hkh_akick_tick(&k);
+        float a = hkh_rumble_tick(&RB, x), b = ref_rumble_tick(&RBREF, x);
+        if (a != b) ++diffs;
+    }
+    assert(diffs == 0);
+    printf("PASS: RUMBLE at the legacy values is the 0.9.4 RUMBLE, sample for sample\n");
+}
+
+static void test_rumble_rhythm(void) {
+    /* Defaults (1/16, DEFINITION 75 %): after each kick three separate
+     * repeats, one per 16th, each quieter than the one before, with a gap
+     * before the next; the 4th lands under the next kick and is ducked. */
+    const float tempos[] = {132.0f, 136.0f, 140.0f};
+    for (int t = 0; t < 3; ++t) {
+        hkh_rumble_init(&RB);
+        rumble_run(&RB, 1, tempos[t], 0.6f, RB_SECONDS);
+        double body[4], gap[4];
+        sixteenths(tempos[t], 16, body, gap);
+        printf("  %.0f BPM: repeats %.1f / %.1f / %.1f dB, gaps after them %.1f / %.1f / %.1f dB, under the kick %.1f dB\n",
+               tempos[t], body[1], body[2], body[3], body[1] - gap[1], body[2] - gap[2], body[3] - gap[3], body[0]);
+        for (int q = 1; q < 4; ++q) assert(body[q] - gap[q] > 9.0);   /* each repeat stands alone */
+        /* and decays (the diffuse part peaks around the 2nd: within 1 dB) */
+        assert(body[2] < body[1] + 1.0 && body[3] < body[2] - 2.0);
+        assert(body[3] > body[1] - 18.0);                            /* the third is still there */
+        assert(body[0] < body[1] - 12.0);                            /* the kick is left clear */
+        /* Quieter than the kick: its peak stays 3 dB under the kick's. */
+        float kp = 0.0f, rp = 0.0f;
+        for (int i = 0; i < 44100 * RB_SECONDS; ++i) { kp = fmaxf(kp, fabsf(RBK[i])); rp = fmaxf(rp, fabsf(RBO[i])); }
+        assert(rp < kp * 0.71f);
+        /* Each repeat starts on its 16th. Timed on the repeats alone
+         * (DEFINITION 100 %: at 75 % the diffuse part swells in just before
+         * each one): the 10 ms RMS envelope crosses half the repeat's peak
+         * 0-25 ms after its 16th (the lowpasses and the window's 3 ms fade-in). */
+        hkh_rumble_init(&RB);
+        hkh_rumble_set(&RB, RB_DEF, 1.0f);
+        rumble_run(&RB, 1, tempos[t], 0.6f, RB_SECONDS);
+        double b0 = 16 * spb(tempos[t]), D = spb(tempos[t]) / 4.0;
+        for (int q = 1; q < 4; ++q) {
+            int s0 = (int)(b0 + q * D);
+            double pk = -1e9;
+            for (int i = s0; i < s0 + (int)(0.6 * D); i += 22) pk = fmax(pk, rms_db(RBO, i - 220, i + 221));
+            int on = -100000;
+            for (int i = s0 - (int)(0.15 * D); i < s0 + (int)(0.6 * D); i += 11)
+                if (rms_db(RBO, i - 220, i + 221) > pk - 6.0) { on = i - s0; break; }
+            printf("    repeat %d is up %.1f ms after its 16th\n", q, on / 44.1);
+            assert(on >= 0 && on < 1103);
+        }
+    }
+    printf("PASS: RUMBLE 1/16 at 132/136/140 BPM: kick + three decaying, separate repeats on the 16ths\n");
+}
+
+static void test_rumble_definition(void) {
+    /* DEFINITION 0 -> 0.5 -> 1: the gap after the first repeat deepens, and
+     * the level stays within 8 dB across the knob. */
+    const float defs[] = {0.0f, 0.5f, 1.0f};
+    double contrast[3], level[3];
+    for (int d = 0; d < 3; ++d) {
+        hkh_rumble_init(&RB);
+        hkh_rumble_set(&RB, RB_DEF, defs[d]);
+        rumble_run(&RB, 1, 136.0f, 0.6f, RB_SECONDS);
+        double body[4], gap[4];
+        sixteenths(136.0f, 16, body, gap);
+        contrast[d] = body[1] - gap[1];
+        level[d] = rms_db(RBO, (int)(16 * spb(136)), (int)(20 * spb(136)));
+        printf("  DEFINITION %3.0f%%: gap after repeat 1 %.1f dB, level %.1f dB\n", defs[d] * 100, contrast[d], level[d]);
+    }
+    assert(contrast[0] < 6.0 && contrast[1] > contrast[0] + 6.0 && contrast[2] > contrast[1] + 6.0);
+    double lo = fmin(level[0], fmin(level[1], level[2])), hi = fmax(level[0], fmax(level[1], level[2]));
+    assert(hi - lo < 8.0);
+    printf("PASS: DEFINITION moves from the diffuse rumble to clear repeats, level within 8 dB\n");
+}
+
+static void test_rumble_knobs(void) {
+    /* FEEDBACK, DAMPING and DUCK each change the sound. */
+    double base[4], g[4];
+    hkh_rumble_init(&RB);
+    rumble_run(&RB, 1, 136.0f, 0.6f, RB_SECONDS);
+    sixteenths(136.0f, 16, base, g);
+    /* FEEDBACK: the third repeat against the first */
+    hkh_rumble_init(&RB); hkh_rumble_set(&RB, RB_FB, 0.0f);
+    rumble_run(&RB, 1, 136.0f, 0.6f, RB_SECONDS);
+    double lo[4]; sixteenths(136.0f, 16, lo, g);
+    hkh_rumble_init(&RB); hkh_rumble_set(&RB, RB_FB, 1.0f);
+    rumble_run(&RB, 1, 136.0f, 0.6f, RB_SECONDS);
+    double hi[4]; sixteenths(136.0f, 16, hi, g);
+    printf("  FEEDBACK 0 / default / 100%%: repeat 3 vs 1 %.1f / %.1f / %.1f dB\n",
+           lo[3] - lo[1], base[3] - base[1], hi[3] - hi[1]);
+    assert(lo[3] - lo[1] < base[3] - base[1] - 4.0 && hi[3] - hi[1] > base[3] - base[1] + 4.0);
+    /* DAMPING: the share of 300 Hz and up in the rumble (a darker rumble
+     * has less of its energy there) */
+    double band[2];
+    for (int d = 0; d < 2; ++d) {
+        hkh_rumble_init(&RB); hkh_rumble_set(&RB, RB_DAMP, d ? 1.0f : 0.0f);
+        int n = rumble_run(&RB, 1, 136.0f, 0.6f, RB_SECONDS);
+        hkh_svf_coef lc; hkh_svf l1 = {0}, l2 = {0};
+        hkh_svf_set(&lc, 300.0f, 0.7071f);
+        double hi = 0.0, all = 0.0;
+        for (int i = 0; i < n; ++i) {
+            float h1, h2;                                  /* 24 dB/oct highpass at 300 Hz */
+            (void)hkh_svf_run(&l1, &lc, RBO[i], 0, &h1);
+            (void)hkh_svf_run(&l2, &lc, h1, 0, &h2);
+            if (i > n / 2) { hi += (double)h2 * h2; all += (double)RBO[i] * RBO[i]; }
+        }
+        band[d] = 10.0 * log10(hi / all + 1e-20);
+    }
+    printf("  DAMPING 0 / 100%%: above 300 Hz %.1f / %.1f dB of the rumble\n", band[0], band[1]);
+    assert(band[1] < band[0] - 6.0);
+    /* DUCK: what is left under the kick */
+    double dk[2];
+    for (int d = 0; d < 2; ++d) {
+        hkh_rumble_init(&RB); hkh_rumble_set(&RB, RB_DUCK, d ? 1.0f : 0.0f);
+        rumble_run(&RB, 1, 136.0f, 0.6f, RB_SECONDS);
+        double b[4]; sixteenths(136.0f, 16, b, g);
+        dk[d] = b[0];
+    }
+    printf("  DUCK 0 vs 100%%: under the kick %.1f / %.1f dB\n", dk[0], dk[1]);
+    assert(dk[1] < dk[0] - 6.0);
+    /* DELAY: 1/8 puts the first repeat on the 8th, nothing on the 16th */
+    hkh_rumble_init(&RB); hkh_rumble_set(&RB, RB_DELAY, RB_DIV_8); hkh_rumble_set(&RB, RB_DEF, 1.0f);
+    rumble_run(&RB, 1, 136.0f, 0.6f, RB_SECONDS);
+    double e8[4]; sixteenths(136.0f, 16, e8, g);
+    assert(e8[2] > e8[1] + 12.0);
+    assert(hkh_rumble_delay_samples(RB_DIV_16, 136.0f) == (int)lroundf(0.25f * 60.0f / 136.0f * 44100.0f));
+    assert(hkh_rumble_delay_samples(RB_DIV_32, 140.0f) == (int)lroundf(0.125f * 60.0f / 140.0f * 44100.0f));
+    assert(hkh_rumble_delay_samples(RB_DIV_8, 5.0f) == hkh_rumble_delay_samples(RB_DIV_8, 120.0f));   /* nonsense -> 120 */
+    assert(hkh_rumble_delay_samples(RB_DIV_8, 20.0f) == HKH_RB_MAX - 1);                              /* clamped */
+    printf("PASS: RUMBLE knobs: FEEDBACK, DAMPING, DUCK and DELAY each act\n");
+}
+
+static void test_rumble_stress(void) {
+    /* Everything at its worst for a minute: FEEDBACK, RUMBLE and DEFINITION
+     * full, no damping, 1/32, the tempo jumping and ramping, the model and
+     * DELAY switching, DUCK both ends. Bounded, finite, no growth, and a
+     * tempo change never steps the output by more than the music does. */
+    hkh_rumble_init(&RB);
+    hkh_rumble_set(&RB, RB_FB, 1.0f); hkh_rumble_set(&RB, RB_DEF, 1.0f);
+    hkh_rumble_set(&RB, RB_DAMP, 0.0f); hkh_rumble_set(&RB, RB_DELAY, RB_DIV_32);
+    hkh_akick k;
+    hkh_akick_init(&k, 1);
+    float peak[6] = {0};
+    double pos = 0.0;
+    for (int i = 0; i < 44100 * 60; ++i) {
+        int sec = i / 44100;
+        float bpm = sec < 20 ? 140.0f : sec < 40 ? 60.0f + 4.0f * (float)(sec - 20) : 999.0f;
+        if (i % BLOCK == 0) {
+            hkh_akick_block(&k, 1.0f);
+            if (i % (44100 * 7) == 0) hkh_rumble_set(&RB, RB_DELAY, (float)((i / (44100 * 7)) % 3));
+            if (i % (44100 * 5) == 0) hkh_rumble_set(&RB, RB_DUCK, (i / (44100 * 5)) % 2 ? 1.0f : 0.0f);
+            hkh_rumble_block(&RB, 1.0f, bpm, BLOCK);
+        }
+        pos += bpm / 60.0 / 44100.0;
+        if (pos >= 1.0) { pos -= 1.0; hkh_akick_trigger(&k, (i / 44100) % 3, 1.0f, 1.0f); hkh_rumble_trigger(&RB); }
+        float y = hkh_rumble_tick(&RB, hkh_akick_tick(&k) * 1.6f);
+        assert(isfinite(y) && fabsf(y) < 4.0f);
+        float *p = &peak[sec / 10];
+        if (fabsf(y) > *p) *p = fabsf(y);
+    }
+    printf("  stress peaks per 10 s: %.2f %.2f %.2f %.2f %.2f %.2f\n", peak[0], peak[1], peak[2], peak[3], peak[4], peak[5]);
+    assert(peak[1] < peak[0] * 1.5f);                  /* no slow build-up at FB 100 % */
+    /* Stopped at FEEDBACK 100 %: a long tail, but it dies -- 60 dB down
+     * within 40 s even at 1/8 (the slowest: fewest passes per second). */
+    hkh_rumble_set(&RB, RB_DELAY, RB_DIV_8);
+    float first = 0.0f, last = 0.0f;
+    for (int j = 0; j < HKH_RB_MAX; ++j) first = fmaxf(first, fabsf(RB.rbuf[j]));
+    for (int i = 0; i < 44100 * 40; ++i) {
+        if (i % BLOCK == 0) hkh_rumble_block(&RB, 0.0f, 120.0f, BLOCK);
+        (void)hkh_rumble_tick(&RB, 0.0f);
+    }
+    for (int j = 0; j < HKH_RB_MAX; ++j) last = fmaxf(last, fabsf(RB.rbuf[j]));
+    printf("  FEEDBACK 100%% tail: line %.2e -> %.2e in 40 s\n", first, last);
+    assert(last < first * 1e-3f);
+    /* At the default FEEDBACK the line empties and RUMBLE parks (no CPU). */
+    hkh_rumble_set(&RB, RB_FB, hkh_rb_defaults[RB_FB]);
+    for (int i = 0; i < 44100 * 30; ++i) {
+        if (i % BLOCK == 0) hkh_rumble_block(&RB, 0.0f, 120.0f, BLOCK);
+        (void)hkh_rumble_tick(&RB, 0.0f);
+    }
+    assert(RB.quiet >= (1 << 20));
+    /* A tempo change: the crossfade keeps sample steps at the music's size. */
+    double maxd[2] = {0.0, 0.0};
+    for (int pass = 0; pass < 2; ++pass) {
+        hkh_rumble_init(&RB2);
+        hkh_akick_init(&k, 1);
+        float prev = 0.0f;
+        long nb = 0;
+        for (int i = 0; i < 44100 * 6; ++i) {
+            float bpm = (pass && i > 44100 * 3) ? 141.0f : 136.0f;
+            if (i % BLOCK == 0) { hkh_akick_block(&k, 0.5f); hkh_rumble_block(&RB2, 0.6f, bpm, BLOCK); }
+            if (i == (int)lround(nb * spb(136))) { hkh_akick_trigger(&k, 1, 1.0f, 0.5f); hkh_rumble_trigger(&RB2); ++nb; }
+            float y = hkh_rumble_tick(&RB2, hkh_akick_tick(&k) * 1.024f);
+            if (i > 44100 * 2) maxd[pass] = fmax(maxd[pass], fabs((double)y - prev));
+            prev = y;
+        }
+    }
+    printf("  largest sample step: steady %.4f, with a tempo change %.4f\n", maxd[0], maxd[1]);
+    assert(maxd[1] < maxd[0] * 1.25);
+    /* NaN in: refused, the state recovers. */
+    hkh_rumble_set(&RB2, RB_FB, NAN);
+    assert(RB2.prm[RB_FB] == hkh_rb_defaults[RB_FB]);
+    printf("PASS: RUMBLE at FEEDBACK/RUMBLE/DEFINITION 100%%, tempo jumps, DELAY/DUCK/model switching: bounded, no clicks\n");
+}
+
 int main(void) {
+    setvbuf(stdout, NULL, _IONBF, 0);    /* every measurement shows, even before a failed assert */
     test_seq_timing();
     test_seq_edges();
     test_patterns();
@@ -1564,6 +1875,12 @@ int main(void) {
     test_rack_sidechain();
     test_rack_sends();
     test_reverb_tone();
+    test_kick_tuning();
+    test_rumble_legacy();
+    test_rumble_rhythm();
+    test_rumble_definition();
+    test_rumble_knobs();
+    test_rumble_stress();
     test_zipper();
     test_random();
     test_shuffle();

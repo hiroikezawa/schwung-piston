@@ -11,8 +11,9 @@ const char *const hkh_param_keys[P_COUNT] = {
     "h_vol", "h_color", "h_decay", "h_drive", "h_comp", "h_filter", "h_verb"
 };
 
+/* RUMBLE (k_rumble) starts at 0.5 since 0.11.0: a new Set plays "zu-bo-bo-bo". */
 const float hkh_param_defaults[P_COUNT] = {
-    0.80f, 0.25f, 0.50f, 0.15f, 0.25f, 0.00f, 0.00f,
+    0.80f, 0.25f, 0.50f, 0.15f, 0.25f, 0.50f, 0.00f,
     0.70f, 0.50f, HKH_HAT_CLOSED_DECAY, 0.10f, 0.20f, 0.50f, 0.00f
 };
 
@@ -99,6 +100,7 @@ static void voices_kick(hkh_engine *e, float vel) {
     hkh_akick_trigger(&e->voices.akick, e->k_model, vel, e->param[P_K_DECAY]);
     hkh_digital_trigger(&e->voices.dkick, kick_sample(e), vel);
     hkh_comp_trigger(&e->voices.kcomp);
+    hkh_rumble_trigger(&e->voices.rumble);  /* its send window and beat duck */
     e->sc_t = 0.0f;                         /* the rack's sidechain key */
 }
 static void voices_hat(hkh_engine *e, float vel, float decay, int follows_base) {
@@ -113,7 +115,7 @@ static void voices_choke(hkh_engine *e, int hat) {
         hkh_digital_choke(&e->voices.dkick, 10.0f);
     }
 }
-static void voices_block(hkh_engine *e, int frames) {
+static void voices_block(hkh_engine *e, int frames, float bpm) {
     hkh_voices *v = &e->voices;
     hkh_akick_block(&v->akick, e->param[P_K_DECAY]);
     /* Equal-power A/D crossfade (cos/sin): 50 % is both at -3 dB, so the
@@ -130,7 +132,7 @@ static void voices_block(hkh_engine *e, int frames) {
     hkh_ktube_block(&v->ktube, e->fx[FX_KT_SAT], e->fx[FX_KT_DRIVE], frames);
     hkh_harm_block(&v->hharm, e->fx[FX_HH_AMT], (int)e->fx[FX_HH_FREQ], frames);
     hkh_buscomp_block(&v->bcomp, e->fx, frames);
-    hkh_rumble_block(&v->rumble, e->param[P_K_RUMBLE], frames);
+    hkh_rumble_block(&v->rumble, e->param[P_K_RUMBLE], bpm, frames);
     /* Gains ramp linearly to a smoothed target across the block. */
     float f = (float)frames;
     v->kvol_step = (kick_vol_gain(e->param[P_K_VOL]) - v->kvol) * BLOCK_SMOOTH / f;
@@ -325,6 +327,10 @@ void hkh_engine_rack_set_fb(hkh_engine *e, float fb) {
 void hkh_engine_set_fx(hkh_engine *e, int index, float value) {
     if (index < 0 || index >= FX_COUNT) return;
     e->fx[index] = hkh_fx_clamp(index, value);
+}
+
+void hkh_engine_set_rumble(hkh_engine *e, int index, float value) {
+    hkh_rumble_set(&e->voices.rumble, index, value);
 }
 
 void hkh_engine_rack_set_sc(hkh_engine *e, float depth) {
@@ -600,7 +606,7 @@ void hkh_engine_render(hkh_engine *e, float *out_l, float *out_r, int frames,
     /* A ratchet never outlives the transport. (Recording needs no such
      * guard: with no step playing there is nowhere to write.) */
     if (!e->seq.running) e->k_ratchet_in = e->h_ratchet_in = -1;
-    voices_block(e, frames);
+    voices_block(e, frames, bpm);
 
     if (e->pending_k) {
         e->pending_k = 0;

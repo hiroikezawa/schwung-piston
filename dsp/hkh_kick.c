@@ -20,28 +20,32 @@ typedef struct {
     float gain;
 } kick_model;
 
-/* Every model settles on A1 (55 Hz); the sweep depths are ratios, so the
- * whole dive moves with it. 808: Roland's service manual tunes the bass
- * drum to 56 Hz (was 49 Hz, the value its parts calculate to). IND was 45. */
+/* Every model settles on C2 (65.406 Hz), the root of a C set (0.11.0; it was
+ * A1, 55 Hz). Only the landing note moved: each dive still STARTS where it
+ * did on A1 (808 ~135 Hz, 909 ~261 Hz, IND ~550 Hz), so the attack -- the
+ * part of a kick that carries its character -- is the same sound, and the
+ * depths are smaller by the three semitones the floor came up. The decay
+ * times are unchanged. */
+#define HKH_KICK_C2 65.406f
 static const kick_model MODELS[3] = {
     [M808] = {
-        .base_hz = 55.0f, .p1_depth = 1.3f, .p1_ms = 30.0f, .p2_depth = 0.15f, .p2_ms = 120.0f,
+        .base_hz = HKH_KICK_C2, .p1_depth = 0.950f, .p1_ms = 30.0f, .p2_depth = 0.110f, .p2_ms = 120.0f,
         .t60_min = 0.22f, .t60_max = 2.6f, .attack_ms = 0.8f, .hold_ms = 7.0f,
         .click_level = 0.22f, .click_ms = 1.2f, .click_hz = 1800.0f, .click_q = 0.7f,
         .pulse_level = 0.0f, .pulse_ms = 0.0f,
         .shape = 1.35f, .shape_end = 1.35f, .shape_ms = 50.0f,
-        .gain = 0.80f,
+        .gain = 0.775f,                        /* 0.80 on A1: C2 reads +0.27 dB louder (K-weighted) */
     },
     [M909] = {
-        .base_hz = 55.0f, .p1_depth = 3.4f, .p1_ms = 10.0f, .p2_depth = 0.35f, .p2_ms = 55.0f,
+        .base_hz = HKH_KICK_C2, .p1_depth = 2.714f, .p1_ms = 10.0f, .p2_depth = 0.279f, .p2_ms = 55.0f,
         .t60_min = 0.10f, .t60_max = 1.3f, .attack_ms = 0.2f, .hold_ms = 0.0f,
         .click_level = 0.85f, .click_ms = 3.5f, .click_hz = 3400.0f, .click_q = 0.9f,
         .pulse_level = 0.55f, .pulse_ms = 0.6f,
         .shape = 2.4f, .shape_end = 1.1f, .shape_ms = 35.0f,
-        .gain = 0.76f,
+        .gain = 0.74f,                         /* 0.76 on A1 (+0.23 dB) */
     },
     [MIND] = {
-        .base_hz = 55.0f, .p1_depth = 8.0f, .p1_ms = 6.0f, .p2_depth = 1.0f, .p2_ms = 85.0f,
+        .base_hz = HKH_KICK_C2, .p1_depth = 6.586f, .p1_ms = 6.0f, .p2_depth = 0.823f, .p2_ms = 85.0f,
         .t60_min = 0.08f, .t60_max = 1.8f, .attack_ms = 0.1f, .hold_ms = 3.0f,
         .click_level = 0.55f, .click_ms = 2.5f, .click_hz = 2400.0f, .click_q = 1.2f,
         .pulse_level = 0.6f, .pulse_ms = 0.6f,
@@ -49,7 +53,7 @@ static const kick_model MODELS[3] = {
         .fm_index = 3.2f, .fm_ratio = 1.414f,
         .fold = 2.2f, .fold_ms = 70.0f,
         .ring_level = 0.35f, .asym = 0.25f,
-        .gain = 0.74f,
+        .gain = 0.73f,                         /* 0.74 on A1 (+0.11 dB) */
     },
 };
 

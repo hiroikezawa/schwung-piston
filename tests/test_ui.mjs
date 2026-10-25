@@ -20,10 +20,12 @@ function mockDsp() {
         rackMask: 0xFFFFFFFF & ~(1 << 4), rackMute: 0, rp: new Array(32).fill(0), rv: new Array(32).fill(0.8), rfb: 0, rsc: 0,
         rds: new Array(32).fill(1), rrs: new Array(32).fill(0), rcs: new Array(32).fill(0), rms: new Array(32).fill(0), rlp: new Array(32).fill(1),
         fx: Object.fromEntries(FX_KEYS.map((k) => [k, FX_DEFS[k].def])), gr: 0, lim: 0,
+        rb: { rb_delay: 1, rb_fb: 0.6, rb_def: 0.75, rb_damp: 0.7, rb_duck: 0.8 },
     };
     d.set = (key, value) => {
         const v = Number(value);
         if (key in d.fx) { d.fx[key] = v; return; }
+        if (key in d.rb) { d.rb[key] = key === "rb_delay" ? Math.round(Math.min(2, Math.max(0, v))) : v; return; }
         if (key in d.params) { d.params[key] = v; if (key === "h_decay" && d.rec && d.running) d.motion[d.step] = v; return; }
         switch (key) {
         case "k_step": d.kp ^= 1 << v; break;
@@ -64,7 +66,8 @@ function mockDsp() {
         ...FX_KEYS.map((k) => Math.round(d.fx[k] * 10)), Math.round(d.gr * 10), d.lim,
         ...d.rds.map((x) => Math.round(x * 1000)), ...d.rrs.map((x) => Math.round(x * 1000)),
         ...d.rcs.map((x) => Math.round(x * 1000)), ...d.rms.map((x) => Math.round(x * 1000)),
-        ...d.rlp.map((x) => Math.round(x * 1000))].join(",");
+        ...d.rlp.map((x) => Math.round(x * 1000)),
+        d.rb.rb_delay, ...["rb_fb", "rb_def", "rb_damp", "rb_duck"].map((k) => Math.round(d.rb[k] * 1000))].join(",");
     return d;
 }
 
@@ -222,7 +225,7 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
     assert.deepEqual(r.sets, [["h_model_pick", "3"]]);
 }
 
-/* ---- the jog: page 2 = the part's effects; its click switches 8 / 16 steps -- */
+/* ---- the jog: KICK page 2 = RUMBLE, 3 = KICK FX; a click switches 8 / 16 -- */
 {
     const r = rig();
     assert.equal(r.ui.state.len, 8);
@@ -231,13 +234,19 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
     assert.deepEqual(r.sets, []);
     r.jog(1);
     r.tick();
+    assert(r.printed.includes("RUMBLE") && r.printed.includes("8 STEPS"));
+    r.jog(1);
+    r.tick();
     assert(r.printed.includes("KICK FX"));
     assert(r.printed.includes("STEPS 8  click: 8/16"));
+    r.jog(1);                                      /* no page 4 */
+    r.tick();
+    assert(r.printed.includes("KICK FX"));
     r.click();
     assert.deepEqual(r.sets, [["length", "16"]]);
-    r.jog(-1);
+    r.jog(-1); r.jog(-1);
     r.tick(4);
-    assert(!r.printed.includes("KICK FX"), "back to the play page");
+    assert(!r.printed.includes("KICK FX") && !r.printed.includes("RUMBLE"), "back to the play page");
     assert.equal(r.ui.state.len, 16);
     /* 16 steps: row 3 = 1-8, row 4 = 9-16. */
     assert.equal(r.leds[noteAt(2, 0)], C.KICK, "step 1 top");
@@ -250,10 +259,54 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
     assert.equal(r.last()[1], "8");
 }
 
-/* ---- page 2 (jog): KICK FX / HAT FX / BUS COMP knobs ------------------------ */
+/* ---- KICK page 2: RUMBLE -------------------------------------------------- */
 {
     const r = rig();
     r.jog(1); r.tick();
+    for (const t of ["RUMBLE", "1/16", "DELAY 1/16", "CLEAR REPEATS", "RMB", "DLY", "FB", "DEF", "DAMP", "DUCK", "PAGE"])
+        assert(r.printed.includes(t), t);
+    r.clear();
+    r.turn(0, 20); r.tick();                       /* knob 1 = the RUMBLE amount itself */
+    assert.equal(r.last()[0], "k_rumble");
+    assert(Number(r.last()[1]) > 0);
+    assert.equal(r.ui.state.params.k_rumble, r.dsp.params.k_rumble, "the same value as page 1's knob 6");
+    /* DELAY is a choice: one step per ENUM_TICKS counts, clamped at 1/32 */
+    r.clear();
+    r.turn(1, 5); r.tick();
+    assert(!r.keys().includes("rb_delay"), "half a click does nothing");
+    r.turn(1, 5); r.tick();
+    assert.deepEqual(r.last(), ["rb_delay", "2.0000"]);
+    r.turn(1, 40); r.tick();
+    assert.equal(r.dsp.rb.rb_delay, 2, "clamped at 1/32");
+    r.tick(4);
+    assert(r.printed.includes("1/32"));
+    r.turn(1, -10); r.turn(1, -10); r.tick();
+    assert.equal(r.dsp.rb.rb_delay, 0, "1/8");
+    /* FEEDBACK, DEFINITION, DAMPING, DUCK: 0..1 */
+    for (const [k, key] of [[2, "rb_fb"], [3, "rb_def"], [4, "rb_damp"], [5, "rb_duck"]]) {
+        r.clear();
+        r.turn(k, -60); r.turn(k, -60); r.tick();
+        assert.equal(r.last()[0], key);
+        assert(r.dsp.rb[key] >= 0 && r.dsp.rb[key] < 0.75, key);
+    }
+    r.tick(4);
+    assert(r.printed.includes("DIFFUSE"), "DEFINITION 0 names itself");
+    /* knob 7 is empty; a touch shows a knob big, records nothing */
+    r.clear();
+    r.turn(6, 30); r.tick();
+    assert.deepEqual(r.sets, []);
+    r.touch(3, true); r.tick();
+    assert(r.printed.includes("4 DEFINITION"));
+    r.touch(3, false);
+    /* leaving the KICK from here lands on the HAT's effects page */
+    r.page(1); r.tick();
+    assert(r.printed.includes("HAT FX"));
+}
+
+/* ---- page 2 (jog): KICK FX / HAT FX / BUS COMP knobs ------------------------ */
+{
+    const r = rig();
+    r.jog(1); r.jog(1); r.tick();
     assert(r.printed.includes("KICK FX") && r.printed.includes("SAT") && r.printed.includes("DRIVE"));
     r.clear();
     r.turn(0, 20); r.tick();                       /* SAT up, real units 0..1 */

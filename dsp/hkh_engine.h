@@ -138,6 +138,8 @@ void hkh_engine_rack_set_sc(hkh_engine *e, float depth);
 void hkh_engine_set_param(hkh_engine *e, int index, float value);
 /* Page-2 effects (KICK FX / HAT FX / BUS COMP), real units, clamped. */
 void hkh_engine_set_fx(hkh_engine *e, int index, float value);
+/* RUMBLE's page (KICK page 2): index = RB_* (hkh_fx.h), clamped. */
+void hkh_engine_set_rumble(hkh_engine *e, int index, float value);
 
 /* Discrete selections. `audition` plays the new sound once if the transport
  * is stopped, so a model can be chosen by ear. */

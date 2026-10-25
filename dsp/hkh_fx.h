@@ -56,15 +56,46 @@ void hkh_comp_block(hkh_comp *c, float amount, int frames);
 void hkh_comp_trigger(hkh_comp *c);   /* a hit starts now */
 float hkh_comp_tick(hkh_comp *c, float x);
 
-/* RUMBLE: the techno rumble as one knob. The kick is sent into a small,
- * dark feedback-delay network (a reverb that lives below ~300 Hz), the tail
- * is saturated, lowpassed hard (24 dB), highpassed out of the subsonic, and
- * ducked by the dry kick so it breathes between hits and never smears the
- * punch. Deeper = longer, darker, dirtier. 0 = off (and, once the tail has
- * died, not even computed). */
+/* RUMBLE: the techno rumble, made from the KICK itself -- never an
+ * oscillator. The kick (after its VOLUME) is sent into two delay paths:
+ *
+ *   RHYTHMIC  a tempo-synced delay (1/8, 1/16 or 1/32). What goes in is the
+ *             kick's own audio through a lowpass, read through a WINDOW that
+ *             opens at each kick and closes before the next repeat is due, so
+ *             every repeat is a separate, rounder copy of the kick's head:
+ *             at 1/16 the kick and three repeats fill a beat, "zu-bo-bo-bo".
+ *             The loop is darkened (DAMPING) and highpassed on every pass and
+ *             bounded by a soft clip; the read is on whole samples (no
+ *             interpolation, so no hidden lowpass) and a tempo or DELAY change
+ *             crossfades to the new length instead of gliding (no pitch bend).
+ *   DIFFUSE   the original RUMBLE (0.1 - 0.9): a small, dark 4-line FDN.
+ *
+ * Each path is saturated, lowpassed (24 dB) and given speaker-band grit (the
+ * sub alone does not exist on Move's speaker) -- the diffuse one exactly as
+ * in 0.9.4, the repeats more gently, so each repeat stays quieter than the
+ * one before it. DEFINITION blends them -- 0 is the diffuse rumble alone, 1
+ * the repeats -- and also shortens the window, shortens the diffuse tail and
+ * moves the duck from following the kick's level to following the beat.
+ * The sum is highpassed (~30 Hz) and DUCKed by the kick.
+ *
+ * Old Sets: a state or preset saved before 0.11.0 has no rb_* values and loads
+ * HKH_RB_LEGACY (DEFINITION 0, the other three at their midpoints), at which
+ * the output is the 0.9.4 RUMBLE sample for sample. */
 #define HKH_RUMBLE_LINES 4
 #define HKH_RUMBLE_MAX 3600
+/* The rhythmic delay line: > a 1/8 at 20.2 BPM (65490 samples at 44.1 kHz);
+ * a longer time (slower tempo) is clamped to it. */
+#define HKH_RB_MAX 65536
+
+enum { RB_DELAY, RB_FB, RB_DEF, RB_DAMP, RB_DUCK, RB_COUNT };
+enum { RB_DIV_8, RB_DIV_16, RB_DIV_32, RB_DIV_COUNT };
+extern const char *const hkh_rb_keys[RB_COUNT];
+extern const float hkh_rb_defaults[RB_COUNT];   /* a new Set */
+extern const float hkh_rb_legacy[RB_COUNT];     /* a Set from before 0.11.0 */
+float hkh_rb_clamp(int idx, float v);           /* NaN -> default */
+
 typedef struct {
+    /* diffuse (0.9.4) */
     float buf[HKH_RUMBLE_LINES][HKH_RUMBLE_MAX];
     int len[HKH_RUMBLE_LINES], pos[HKH_RUMBLE_LINES];
     float damp[HKH_RUMBLE_LINES];
@@ -76,11 +107,38 @@ typedef struct {
     float grit_amt;
     float hp_x, hp_y, duck_env;
     int quiet;                 /* samples the tail has been inaudible */
+
+    /* the knobs (as set) and their smoothed values */
+    float prm[RB_COUNT];
+    float def, fbk, dmp, dck;
+    float wd, wr, wd_step, wr_step;     /* diffuse / rhythmic weights, ramped */
+
+    /* rhythmic */
+    float rbuf[HKH_RB_MAX];
+    int rpos;
+    int rlen, rlen_old;        /* samples: current read length, the one fading out */
+    int xf, xf_len;            /* crossfade position / length (0 = none) */
+    float bpm;
+    int t;                     /* samples since the last kick */
+    int win_hold, win_end;     /* send window: open until hold, closed at end */
+    int dk_hold, dk_end;       /* beat duck: full until hold, gone at end */
+    float rfb;                 /* loop gain */
+    float clear;               /* how far a new kick clears the old repeats */
+    hkh_svf_coef rpre_c, rloop_c;
+    hkh_svf rpre1, rpre2, rloop;
+    hkh_svf rout1, rout2, rgrit1, rgrit2;   /* the repeats' own lowpass and grit */
+    float rhp_x, rhp_y;
+    float rgain;               /* rhythmic level against the diffuse one */
 } hkh_rumble;
 
 void hkh_rumble_init(hkh_rumble *r);
-void hkh_rumble_block(hkh_rumble *r, float amount, int frames);
+/* amount = the RUMBLE knob (0..1); bpm = the host tempo (invalid -> 120). */
+void hkh_rumble_block(hkh_rumble *r, float amount, float bpm, int frames);
+void hkh_rumble_set(hkh_rumble *r, int idx, float v);
+void hkh_rumble_trigger(hkh_rumble *r);   /* a kick starts now */
 float hkh_rumble_tick(hkh_rumble *r, float kick);
+/* The delay time in samples for a division at a tempo (exposed for tests). */
+int hkh_rumble_delay_samples(int division, float bpm);
 
 /* REVERB: a stereo 8-line FDN room shared by both voices, each with its own
  * send. The kick's send is band-limited to 180 Hz - 2 kHz (24 dB/oct
