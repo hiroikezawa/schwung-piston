@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Measure the RUMBLE demo WAVs (scripts/render_demo.sh -> build/demo).
 
-For each rumble_<bpm>bpm_def<NNN>.wav: per 16th of the beat, averaged over
-beats 4-11, the peak (dBFS) and the quietest 5 ms in that 16th's last 40 %
-(the gap before the next hit). Slot 1 is the kick, 2-4 the repeats.
+For each rumble_<bpm>bpm_def<NNN>.wav: per 8th of the beat, averaged over
+beats 4-11, the peak (dBFS) and the quietest 5 ms in that 8th's last 40 %
+(the gap before the next hit). Slot 1 is the kick, 2 the repeat (offbeat).
 """
 import math
 import pathlib
@@ -20,12 +20,12 @@ for path in sorted(demo.glob("rumble_*bpm_def*.wav")):
         sr = w.getframerate()
     x = [s / 32768.0 for s in struct.unpack("<%dh" % (len(raw) // 2), raw)[0::2]]
     spb = sr * 60.0 / bpm
-    d = spb / 4.0
-    peak = [0.0] * 4
-    gap = [0.0] * 4
+    d = spb / 2.0
+    peak = [0.0] * 2
+    gap = [0.0] * 2
     beats = range(4, 12)
     for b in beats:
-        for q in range(4):
+        for q in range(2):
             s0 = int(b * spb + q * d)
             seg = x[s0:int(s0 + d)]
             peak[q] += 20 * math.log10(max(abs(v) for v in seg) + 1e-9) / len(beats)
@@ -36,4 +36,4 @@ for path in sorted(demo.glob("rumble_*bpm_def*.wav")):
             gap[q] += lo / len(beats)
     top = 20 * math.log10(max(abs(v) for v in x) + 1e-9)
     print(f"{path.name:32s} peak {top:5.1f} dBFS | " +
-          "  ".join(f"[{q + 1}] {peak[q]:5.1f} gap {gap[q]:5.1f}" for q in range(4)))
+          "  ".join(f"[{q + 1}] {peak[q]:5.1f} gap {gap[q]:5.1f}" for q in range(2)))

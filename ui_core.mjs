@@ -137,7 +137,8 @@ const ENUM_TICKS = 10;         /* encoder counts per choice on an option knob */
 
 /* KICK page 2: RUMBLE. The rb_* keys and their order are dsp/hkh_fx.h's
  * (RB_*); knob 1 is the RUMBLE amount itself, k_rumble -- the same value as
- * page 1's knob 6. All 0..1 except DELAY, a division index. */
+ * page 1's knob 6. All 0..1 except DELAY, a division index that the DSP
+ * holds at 1/8 (0.11.1), so it has no knob. */
 export const RB_KEYS = ["rb_delay", "rb_fb", "rb_def", "rb_damp", "rb_duck"];
 export const RB_DIVS = ["1/8", "1/16", "1/32"];
 export const RB_DEFS = {
@@ -148,9 +149,9 @@ export const RB_DEFS = {
     rb_damp: { min: 0, max: 1, res: 0.001, label: "DAMP", name: "DAMPING", show: pct },
     rb_duck: { min: 0, max: 1, res: 0.001, label: "DUCK", name: "DUCK", show: pct },
 };
-export const RB_KNOBS = ["k_rumble", "rb_delay", "rb_fb", "rb_def", "rb_damp", "rb_duck", null, null];
+export const RB_KNOBS = ["k_rumble", "rb_fb", "rb_def", "rb_damp", "rb_duck", null, null, null];
 /* Short names in page 1's layout (knob 8 still turns the part). */
-export const RB_LABELS = ["RMB", "DLY", "FB", "DEF", "DAMP", "DUCK", "-", "PAGE"];
+export const RB_LABELS = ["RMB", "FB", "DEF", "DAMP", "DUCK", "-", "-", "PAGE"];
 export const RB_TITLE = "RUMBLE";
 export function rbText(key, v) {
     const d = RB_DEFS[key];

@@ -20,7 +20,7 @@ function mockDsp() {
         rackMask: 0xFFFFFFFF & ~(1 << 4), rackMute: 0, rp: new Array(32).fill(0), rv: new Array(32).fill(0.8), rfb: 0, rsc: 0,
         rds: new Array(32).fill(1), rrs: new Array(32).fill(0), rcs: new Array(32).fill(0), rms: new Array(32).fill(0), rlp: new Array(32).fill(1),
         fx: Object.fromEntries(FX_KEYS.map((k) => [k, FX_DEFS[k].def])), gr: 0, lim: 0,
-        rb: { rb_delay: 1, rb_fb: 0.6, rb_def: 0.75, rb_damp: 0.7, rb_duck: 0.8 },
+        rb: { rb_delay: 0, rb_fb: 0.6, rb_def: 0.75, rb_damp: 0.7, rb_duck: 0.8 },
     };
     d.set = (key, value) => {
         const v = Number(value);
@@ -262,28 +262,18 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
 /* ---- KICK page 2: RUMBLE -------------------------------------------------- */
 {
     const r = rig();
+    r.dsp.rb.rb_delay = 0;                         /* the DSP holds 1/8 */
     r.jog(1); r.tick();
-    for (const t of ["RUMBLE", "1/16", "DELAY 1/16", "CLEAR REPEATS", "RMB", "DLY", "FB", "DEF", "DAMP", "DUCK", "PAGE"])
+    for (const t of ["RUMBLE", "1/8", "DELAY 1/8", "CLEAR REPEATS", "RMB", "FB", "DEF", "DAMP", "DUCK", "PAGE"])
         assert(r.printed.includes(t), t);
+    assert(!r.printed.includes("DLY"), "no DELAY knob: it is fixed at 1/8");
     r.clear();
     r.turn(0, 20); r.tick();                       /* knob 1 = the RUMBLE amount itself */
     assert.equal(r.last()[0], "k_rumble");
     assert(Number(r.last()[1]) > 0);
     assert.equal(r.ui.state.params.k_rumble, r.dsp.params.k_rumble, "the same value as page 1's knob 6");
-    /* DELAY is a choice: one step per ENUM_TICKS counts, clamped at 1/32 */
-    r.clear();
-    r.turn(1, 5); r.tick();
-    assert(!r.keys().includes("rb_delay"), "half a click does nothing");
-    r.turn(1, 5); r.tick();
-    assert.deepEqual(r.last(), ["rb_delay", "2.0000"]);
-    r.turn(1, 40); r.tick();
-    assert.equal(r.dsp.rb.rb_delay, 2, "clamped at 1/32");
-    r.tick(4);
-    assert(r.printed.includes("1/32"));
-    r.turn(1, -10); r.turn(1, -10); r.tick();
-    assert.equal(r.dsp.rb.rb_delay, 0, "1/8");
-    /* FEEDBACK, DEFINITION, DAMPING, DUCK: 0..1 */
-    for (const [k, key] of [[2, "rb_fb"], [3, "rb_def"], [4, "rb_damp"], [5, "rb_duck"]]) {
+    /* FEEDBACK, DEFINITION, DAMPING, DUCK: knobs 2-5, 0..1 */
+    for (const [k, key] of [[1, "rb_fb"], [2, "rb_def"], [3, "rb_damp"], [4, "rb_duck"]]) {
         r.clear();
         r.turn(k, -60); r.turn(k, -60); r.tick();
         assert.equal(r.last()[0], key);
@@ -291,13 +281,14 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
     }
     r.tick(4);
     assert(r.printed.includes("DIFFUSE"), "DEFINITION 0 names itself");
-    /* knob 7 is empty; a touch shows a knob big, records nothing */
+    /* knobs 6-7 are empty; nothing ever writes rb_delay */
     r.clear();
-    r.turn(6, 30); r.tick();
+    r.turn(5, 30); r.turn(6, 30); r.tick();
     assert.deepEqual(r.sets, []);
-    r.touch(3, true); r.tick();
-    assert(r.printed.includes("4 DEFINITION"));
-    r.touch(3, false);
+    /* a touch shows a knob big, records nothing */
+    r.touch(2, true); r.tick();
+    assert(r.printed.includes("3 DEFINITION"));
+    r.touch(2, false);
     /* leaving the KICK from here lands on the HAT's effects page */
     r.page(1); r.tick();
     assert(r.printed.includes("HAT FX"));

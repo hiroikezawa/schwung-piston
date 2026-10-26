@@ -96,15 +96,18 @@ float hkh_comp_tick(hkh_comp *c, float x) {
 const char *const hkh_rb_keys[RB_COUNT] = {"rb_delay", "rb_fb", "rb_def", "rb_damp", "rb_duck"};
 /* A new Set: 1/16, three clear repeats, mostly the repeats, dark, ducked
  * hard (measured, see tests/test_engine.c test_rumble_*). */
-const float hkh_rb_defaults[RB_COUNT] = {RB_DIV_16, 0.60f, 0.75f, 0.70f, 0.80f};
+const float hkh_rb_defaults[RB_COUNT] = {RB_DIV_8, 0.60f, 0.75f, 0.70f, 0.80f};
 /* A Set from before 0.11.0: every scale below is exactly 1 here and the
  * rhythmic weight exactly 0, so the output is the 0.9.4 RUMBLE. */
-const float hkh_rb_legacy[RB_COUNT] = {RB_DIV_16, 0.5f, 0.0f, 0.5f, 0.5f};
+const float hkh_rb_legacy[RB_COUNT] = {RB_DIV_8, 0.5f, 0.0f, 0.5f, 0.5f};
 
 float hkh_rb_clamp(int idx, float v) {
     if (idx < 0 || idx >= RB_COUNT) return 0.0f;
     if (!isfinite(v)) return hkh_rb_defaults[idx];
-    if (idx == RB_DELAY) return floorf(hkh_clamp(v, 0.0f, (float)(RB_DIV_COUNT - 1)) + 0.5f);
+    /* DELAY is fixed at 1/8 (0.11.1): the kick and one repeat on the
+     * offbeat. The key and its slot in the state stay, so a Set saved with
+     * 1/16 or 1/32 still opens -- at 1/8. */
+    if (idx == RB_DELAY) return (float)RB_DIV_8;
     return hkh_clamp(v, 0.0f, 1.0f);
 }
 

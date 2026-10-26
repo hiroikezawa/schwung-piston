@@ -59,11 +59,13 @@ float hkh_comp_tick(hkh_comp *c, float x);
 /* RUMBLE: the techno rumble, made from the KICK itself -- never an
  * oscillator. The kick (after its VOLUME) is sent into two delay paths:
  *
- *   RHYTHMIC  a tempo-synced delay (1/8, 1/16 or 1/32). What goes in is the
- *             kick's own audio through a lowpass, read through a WINDOW that
- *             opens at each kick and closes before the next repeat is due, so
- *             every repeat is a separate, rounder copy of the kick's head:
- *             at 1/16 the kick and three repeats fill a beat, "zu-bo-bo-bo".
+ *   RHYTHMIC  a tempo-synced 1/8 delay (0.11.0 also had 1/16 and 1/32;
+ *             the line still takes any division, RUMBLE's page just no longer
+ *             offers them). What goes in is the kick's own audio through a
+ *             lowpass, read through a WINDOW that opens at each kick and
+ *             closes before the next repeat is due, so every repeat is a
+ *             separate, rounder copy of the kick's head: "zu-bo" on every
+ *             beat, the second repeat landing (ducked) under the next kick.
  *             The loop is darkened (DAMPING) and highpassed on every pass and
  *             bounded by a soft clip; the read is on whole samples (no
  *             interpolation, so no hidden lowpass) and a tempo or DELAY change

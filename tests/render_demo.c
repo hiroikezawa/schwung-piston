@@ -151,7 +151,8 @@ int main(int argc, char **argv) {
 
     /* RUMBLE 0.11.0: four-on-the-floor 909 at 132 / 136 / 140 BPM, kick and
      * rumble only, DEFINITION 0 / 50 / 100 % (the rest at its defaults), four
-     * bars each: "zu-bo-bo-bo" against the diffuse rumble. */
+     * bars each: "zu-bo" (one repeat on each offbeat, 1/8) against the
+     * diffuse rumble. */
     const float tempos[] = {132.0f, 136.0f, 140.0f};
     const float defs[] = {0.0f, 0.5f, 1.0f};
     for (int t = 0; t < 3; ++t) {

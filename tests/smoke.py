@@ -349,26 +349,31 @@ destroy(pr)
 
 # --- RUMBLE page (0.11.0): ui_state 291-295, state "rb", kick preset ------------
 ps = create(b".", None)
-assert ui_state(ps)[291:296] == [1, 600, 750, 700, 800], "defaults: 1/16, FB 60, DEF 75, DAMP 70, DUCK 80"
+assert ui_state(ps)[291:296] == [0, 600, 750, 700, 800], "defaults: 1/8, FB 60, DEF 75, DAMP 70, DUCK 80"
 assert len(read("k_preset", inst=ps).split(",")) == 10 + 5
 write("rb_delay", 2, inst=ps); write("rb_fb", 0.9, inst=ps); write("rb_def", "nan", inst=ps)
 write("rb_damp", 7, inst=ps); write("rb_duck", -1, inst=ps)
-assert ui_state(ps)[291:296] == [2, 900, 750, 1000, 0], ui_state(ps)[291:]
-write("rb_delay", 1.4, inst=ps)
-assert ui_state(ps)[291] == 1, "DELAY rounds to a division"
+assert ui_state(ps)[291:296] == [0, 900, 750, 1000, 0], "DELAY stays 1/8 (0.11.1)"
+write("rb_delay", 1, inst=ps)
+assert ui_state(ps)[291] == 0, "DELAY is held at 1/8"
 assert abs(float(read("rb_fb", inst=ps)) - 0.9) < 1e-4
 doc = json.loads(read("state", inst=ps))
-assert doc["rb"] == [1, 0.9, 0.75, 1, 0], doc["rb"]
+assert doc["rb"] == [0, 0.9, 0.75, 1, 0], doc["rb"]
+d16 = dict(doc); d16["rb"] = [1] + doc["rb"][1:]
+q16 = create(b".", None)
+write("state", json.dumps(d16), inst=q16)
+assert ui_state(q16)[291:296] == [0, 900, 750, 1000, 0], "a 0.11.0 Set at 1/16 opens, at 1/8"
+destroy(q16)
 q7 = create(b".", None)
 write("state", read("state", inst=ps), inst=q7)
 assert ui_state(q7)[291:296] == ui_state(ps)[291:296], "the RUMBLE page is saved with the Set"
 old_doc = dict(doc); del old_doc["rb"]
 write("state", json.dumps(old_doc), inst=q7)
-assert ui_state(q7)[291:296] == [1, 500, 0, 500, 500], "an older Set opens at the legacy values (0.9.4 RUMBLE)"
+assert ui_state(q7)[291:296] == [0, 500, 0, 500, 500], "an older Set opens at the legacy values (0.9.4 RUMBLE)"
 sub_doc = dict(old_doc); sub_doc["sub"] = [1, 2, 1, 0.8, 0.7, 0.572, 0.25, 0.15, 0.4, 0.5]
 write("state", read("state", inst=ps), inst=q7)
 write("state", json.dumps(sub_doc), inst=q7)
-assert ui_state(q7)[291:296] == [1, 500, 0, 500, 500], "a 0.10.0 Set loads; its SUB is ignored"
+assert ui_state(q7)[291:296] == [0, 500, 0, 500, 500], "a 0.10.0 Set loads; its SUB is ignored"
 for bad in ([3] + doc["rb"][1:], doc["rb"][:2] + [1.5] + doc["rb"][3:], doc["rb"][:4], [0.5] + doc["rb"][1:]):
     bd = dict(doc); bd["rb"] = bad
     before = read("state", inst=q7)
@@ -380,10 +385,10 @@ kp_rb = read("k_preset", inst=ps)
 write("k_preset", kp_rb, inst=q7)
 assert ui_state(q7)[291:296] == ui_state(ps)[291:296]
 write("k_preset", ",".join(kp_rb.split(",")[:10]), inst=q7)
-assert ui_state(q7)[291:296] == [1, 500, 0, 500, 500], "old preset: legacy RUMBLE"
+assert ui_state(q7)[291:296] == [0, 500, 0, 500, 500], "old preset: legacy RUMBLE"
 write("k_preset", kp_rb, inst=q7)
 write("k_preset", ",".join(kp_rb.split(",")[:10] + ["1", "2", "1", "0.8", "0.7", "0.572", "0.25", "0.15", "0.4", "0.5"]), inst=q7)
-assert ui_state(q7)[291:296] == [1, 500, 0, 500, 500], "0.10.0 preset (with SUB): loads, legacy RUMBLE"
+assert ui_state(q7)[291:296] == [0, 500, 0, 500, 500], "0.10.0 preset (with SUB): loads, legacy RUMBLE"
 before = read("state", inst=q7)
 write("k_preset", ",".join(kp_rb.split(",")[:10] + ["5", "0.5", "0.5", "0.5", "0.5"]), inst=q7)
 assert read("state", inst=q7) == before, "a bad DELAY refuses the whole preset"
