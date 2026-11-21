@@ -59,6 +59,20 @@ export function rackPadStep(pad, row, col, len) {
     return -1;
 }
 
+/* A held pad's period button: the top-right pad of its own half (its left
+ * neighbour when that is the held pad). Each press: whole > 3 > 5 > 7. */
+export const RACK_PERIODS = [0, 3, 5, 7];
+export function rackPeriodPad(held) {
+    const corner = held < 16 ? 7 : 23;
+    return held === corner ? corner - 1 : corner;
+}
+/* How many steps pad plays, and the step it is on (-1 stopped). */
+export function rackLen(s, pad) { return s.rpl[pad] || s.len; }
+export function rackStepOf(s, pad) {
+    if (s.step < 0) return -1;
+    return s.rpl[pad] ? s.abs % s.rpl[pad] : s.step;
+}
+
 /* Which pad holds step i (0-based), and which step a pad holds (-1 none). */
 export function stepPad(i, len) {
     if (len === 16) return noteAt(i < 8 ? 2 : 3, i % 8);
@@ -218,11 +232,13 @@ export const C = {
     RACK: 14, RACK_DIM: 91,         /* CyanTeal: the rack switch, pads with a sample */
     RACK_STEP: 16,                  /* AzureBlue: a held pad's steps */
     RACK_MUTED: 66,                 /* VeryDarkRed */
+    /* a held pad's period button: whole / 3 / 5 / 7 */
+    RACK_PERIOD: { 0: 83, 3: 3, 5: 19, 7: 23 },
 };
 
 /* A held rack pad's knobs 1-6: its volume, its four sends and its LPF. */
 const RACK_PAD_KEYS = ["r_vol", "r_dsend", "r_rsend", "r_csend", "r_msend", "r_lpf"];
-const RACK_PAD_NAMES = ["VOL", "DLY", "REV", "CRS", "RNG", "LPF"];
+const RACK_PAD_NAMES = ["VO", "DL", "RV", "CR", "RM", "LP"];   /* eight columns of 16 px: three letters collide */
 
 /* The LPF knob's cutoff (as dsp/hkh_engine.c hkh_rack_lpf_hz), shortened to
  * three characters for its column: "-" open, "800", "2k4", "12k". */
@@ -242,7 +258,8 @@ export const UI_STATE_FIELDS = 18 + 14 + 16 + 2 + 2 + 32 + 32 + 1 + 1   // + the
     + 32 + 32                                                            // + rack DLY / REV sends (0.8.0)
     + 32 + 32                                                            // + rack CRUSH / RING sends (0.8.1)
     + 32                                                                 // + rack LPF (0.8.2)
-    + 5;                                                                 // + RUMBLE page (0.11.0)
+    + 5                                                                  // + RUMBLE page (0.11.0)
+    + 32 + 1;                                                            // + rack periods, 1/16 count (0.12.0)
 
 export function parseUiState(text) {
     if (typeof text !== "string" || text.length === 0) return null;
@@ -274,6 +291,7 @@ export function parseUiState(text) {
         rlp: n.slice(259, 291).map((x) => x / 1000),
         /* RUMBLE page: DELAY as its index, the rest knob positions */
         rb: Object.fromEntries(RB_KEYS.map((k, i) => [k, i === 0 ? n[291] : n[291 + i] / 1000])),
+        rpl: n.slice(296, 328), abs: n[328],
     };
 }
 
@@ -284,7 +302,7 @@ export function defaultState() {
         Array(32).fill(0).join(",") + "," + Array(32).fill(800).join(",") + ",0,0," +
         FX_KEYS.map((k) => Math.round(FX_DEFS[k].def * 10)).join(",") + ",0,0," +
         Array(32).fill(1000).join(",") + "," + Array(96).fill(0).join(",") + "," + Array(32).fill(1000).join(",") +
-        ",1,600,750,700,800");
+        ",1,600,750,700,800," + Array(32).fill(0).join(",") + ",0");
 }
 
 /* ---- LEDs (pure) --------------------------------------------------------- */
@@ -369,7 +387,7 @@ export function computeLeds(s, ui) {
 
 function rackLeds(s, ui, out, put) {
     const held = ui.rackHeld;
-    const hit = (pad) => s.running && s.step >= 0 && ((s.rp[pad] >> s.step) & 1) === 1;
+    const hit = (pad) => s.running && s.step >= 0 && ((s.rp[pad] >> rackStepOf(s, pad)) & 1) === 1;
     for (let pad = 0; pad < RACK_PADS; pad++) {
         const row = Math.floor(pad / RACK_COLS), col = pad % RACK_COLS;
         const loaded = ((s.rackMask >> pad) & 1) === 1;
@@ -385,12 +403,15 @@ function rackLeds(s, ui, out, put) {
     if (held >= 0) {
         /* The held pad's steps cover the other half. */
         for (const row of rackStepRows(held)) for (let col = 0; col < 8; col++) put(row, col, C.OFF);
-        for (let i = 0; i < s.len; i++) {
+        const cur = rackStepOf(s, held), n = rackLen(s, held);
+        for (let i = 0; i < n; i++) {
             const on = ((s.rp[held] >> i) & 1) === 1;
             let color = on ? C.RACK_STEP : C.OFF;
-            if (s.running && s.step === i) color = on ? C.WHITE : C.LIGHT;
+            if (s.running && cur === i) color = on ? C.WHITE : C.LIGHT;
             out[rackStepPad(held, i, s.len)] = color;
         }
+        const pb = rackPeriodPad(held);
+        put(Math.floor(pb / RACK_COLS), pb % RACK_COLS, C.RACK_PERIOD[s.rpl[held]]);
     }
     return out;
 }
@@ -429,6 +450,9 @@ export function knobStep(elapsedMs) {
     if (elapsedMs <= 20) return 0.04;
     return 0.005 + (0.035 * (140 - elapsedMs)) / 120;
 }
+
+/* A held rack pad's volume (knob 1) moves at a third of the other knobs. */
+const RACK_VOL_SCALE = 1 / 3;
 
 /* ---- the controller ------------------------------------------------------- */
 
@@ -579,9 +603,20 @@ export function createUi(host) {
             /* A pad is held: the other half is its steps. */
             const step = rackPadStep(held, row, col, s.len);
             if (step >= 0 || rackStepRows(held).includes(row)) {
-                if (down && step >= 0) {
+                if (down && step >= 0 && step < rackLen(s, held)) {
                     set("r_step", `${held}:${step}`);
                     s.rp[held] ^= (1 << step);
+                    readDue = true;
+                }
+                return;
+            }
+            const button = rackPeriodPad(held);
+            if (rackPadAt(row, col) === button) {
+                if (down) {
+                    const i = RACK_PERIODS.indexOf(s.rpl[held]);
+                    const next = RACK_PERIODS[(i + 1) % RACK_PERIODS.length];
+                    set("r_period", `${held}:${next}`);
+                    s.rpl[held] = next;
                     readDue = true;
                 }
                 return;
@@ -592,7 +627,7 @@ export function createUi(host) {
                 for (const n of ui.held) {
                     const q = padAt(n);
                     const p = q ? rackPadAt(q.row, q.col) : -1;
-                    if (p >= 0) { ui.rackHeld = p; break; }
+                    if (p >= 0 && p !== button) { ui.rackHeld = p; break; }
                 }
             }
             return;
@@ -756,6 +791,8 @@ export function createUi(host) {
 
     /* ---- knobs ---- */
     function onKnobTurn(knob, value) {
+        /* A held rack pad's screen shows knobs 7 and 8 as empty, and they are. */
+        if (knob >= 6 && page === 0 && s.mode === MODE_RACK && ui.rackHeld >= 0) return;
         if (knob === 7) {
             /* Knob 8 turns the page: KICK > HAT > RACK, one page per turn
              * gesture (a spin does not race through all three). */
@@ -805,7 +842,7 @@ export function createUi(host) {
             const arr = [s.rv, s.rds, s.rrs, s.rcs, s.rms, s.rlp][knob];
             if (!arr) return;
             const now = host.now();
-            const step = knobStep(now - lastTurn[knob]);
+            const step = knobStep(now - lastTurn[knob]) * (knob === 0 ? RACK_VOL_SCALE : 1);
             lastTurn[knob] = now;
             const v = Math.min(1, Math.max(0, arr[pad] + d * step));
             arr[pad] = v;
@@ -1143,7 +1180,7 @@ export function createUi(host) {
                 const x = (pad % RACK_COLS) * 16, y = 13 + Math.floor(pad / RACK_COLS) * 12;
                 const loaded = ((s.rackMask >> pad) & 1) === 1;
                 const muted = ((s.rackMute >> pad) & 1) === 1;
-                const hit = s.running && s.step >= 0 && ((s.rp[pad] >> s.step) & 1) === 1;
+                const hit = s.running && s.step >= 0 && ((s.rp[pad] >> rackStepOf(s, pad)) & 1) === 1;
                 const label = muted ? "M" : String(pad + 1);
                 if (hit && !muted) {
                     g.fillRect(x, y, 15, 11, 1);
@@ -1163,22 +1200,27 @@ export function createUi(host) {
         const muted = ((s.rackMute >> held) & 1) === 1;
         g.print(0, 14, loaded ? `Rack/${String(held + 1).padStart(2, "0")}.wav` : "NO SAMPLE", 1);
         if (muted) { g.fillRect(114, 13, 14, 10, 1); g.print(117, 14, "M", 0); }
-        const p = s.rp[held];
-        for (let i = 0; i < s.len; i++) {
+        const lenText = s.rpl[held] ? `LEN ${s.rpl[held]}` : "LEN FULL";
+        g.print(112 - tw(lenText), 14, lenText, 1);
+        const p = s.rp[held], cur = rackStepOf(s, held), steps = rackLen(s, held);
+        for (let i = 0; i < steps; i++) {
             const x = 9 + (i % 8) * 13, y = s.len === 16 ? (i < 8 ? 23 : 31) : 26;
             if ((p >> i) & 1) g.fillRect(x, y, 11, 6, 1); else g.drawRect(x, y, 11, 6, 1);
-            if (s.running && s.step === i) g.fillRect(x, y + 7, 11, 1, 1);
+            if (s.running && cur === i) g.fillRect(x, y + 7, 11, 1, 1);
         }
         /* knobs 1-6: VOL, the four sends and the LPF: name, value, bar */
         const vals = [s.rv[held], s.rds[held], s.rrs[held], s.rcs[held], s.rms[held], s.rlp[held]];
         vals.forEach((v, k) => {
-            const x = k * 21, name = RACK_PAD_NAMES[k];
+            const x = k * 16, name = RACK_PAD_NAMES[k];
             const num = k === 5 ? lpfLabel(v) : String(Math.round(v * 100));
-            g.print(x + Math.floor((20 - tw(name)) / 2), 40, name, 1);
-            g.print(x + Math.floor((20 - tw(num)) / 2), 49, num, 1);
-            g.drawRect(x, 58, 20, 5, 1);
-            g.fillRect(x + 1, 59, Math.round(18 * v), 3, 1);
+            g.print(Math.max(x, x + Math.floor((15 - tw(name)) / 2)), 40, name, 1);
+            g.print(Math.max(x, x + Math.floor((15 - tw(num)) / 2)), 49, num, 1);
+            g.drawRect(x, 58, 15, 5, 1);
+            g.fillRect(x + 1, 59, Math.round(13 * v), 3, 1);
         });
+        /* knobs 7 and 8 do nothing here. Not "-": that is an open LPF, right
+         * beside them. */
+        g.print(96 + Math.floor((31 - tw("EMPTY")) / 2), 40, "EMPTY", 1);
     }
 
     /* ---- lifecycle ---- */

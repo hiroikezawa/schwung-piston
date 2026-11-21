@@ -21,6 +21,7 @@ function mockDsp() {
         rds: new Array(32).fill(1), rrs: new Array(32).fill(0), rcs: new Array(32).fill(0), rms: new Array(32).fill(0), rlp: new Array(32).fill(1),
         fx: Object.fromEntries(FX_KEYS.map((k) => [k, FX_DEFS[k].def])), gr: 0, lim: 0,
         rb: { rb_delay: 0, rb_fb: 0.6, rb_def: 0.75, rb_damp: 0.7, rb_duck: 0.8 },
+        rpl: new Array(32).fill(0), abs: 0,
     };
     d.set = (key, value) => {
         const v = Number(value);
@@ -45,6 +46,7 @@ function mockDsp() {
         case "h_motion_rec": d.rec = v; break;
         case "k_preset": { const f = String(value).split(",").map(Number); d.kmodel = f[0]; d.kp = f[2]; break; }
         case "h_preset": { const f = String(value).split(",").map(Number); d.hmodel = f[0]; d.hp = f[1]; break; }
+        case "r_period": { const [a, b] = String(value).split(":").map(Number); d.rpl[a] = b; break; }
         case "r_step": { const [a, b] = String(value).split(":").map(Number); d.rp[a] ^= 1 << b; break; }
         case "r_mute": { const [a, b] = String(value).split(":").map(Number); d.rackMute = b ? d.rackMute | (1 << a) : d.rackMute & ~(1 << a); break; }
         case "r_fb": d.rfb = v; break;
@@ -67,7 +69,8 @@ function mockDsp() {
         ...d.rds.map((x) => Math.round(x * 1000)), ...d.rrs.map((x) => Math.round(x * 1000)),
         ...d.rcs.map((x) => Math.round(x * 1000)), ...d.rms.map((x) => Math.round(x * 1000)),
         ...d.rlp.map((x) => Math.round(x * 1000)),
-        d.rb.rb_delay, ...["rb_fb", "rb_def", "rb_damp", "rb_duck"].map((k) => Math.round(d.rb[k] * 1000))].join(",");
+        d.rb.rb_delay, ...["rb_fb", "rb_def", "rb_damp", "rb_duck"].map((k) => Math.round(d.rb[k] * 1000)),
+        ...d.rpl, d.abs].join(",");
     return d;
 }
 
@@ -532,7 +535,16 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
     r.turn(0, 20);                                /* knob 1: its volume */
     r.tick();
     assert(r.sets.some(([k, v]) => k === "r_step" && v === "1:3"));
-    assert(r.sets.some(([k, v]) => k === "r_vol" && v.startsWith("1:0.9")), JSON.stringify(r.sets));
+    assert(r.sets.some(([k, v]) => k === "r_vol" && v.startsWith("1:0.83")), JSON.stringify(r.sets));
+    {
+        /* The volume moves at a third of a send, the same turn on both. */
+        const before = [...r.sets].reverse().find(([k]) => k === "r_vol")[1];
+        r.turn(0, -1);
+        r.tick();
+        const after = [...r.sets].reverse().find(([k]) => k === "r_vol")[1];
+        const moved = Number(before.split(":")[1]) - Number(after.split(":")[1]);
+        assert(moved > 0 && moved <= 0.04 / 3 + 1e-3, `r_vol moved ${moved}`);
+    }
     r.turn(1, -30);                               /* knob 2: its DLY send, down from 100 */
     r.turn(2, 30);                                /* knob 3: its REV send, up from 0 */
     r.tick();
@@ -549,7 +561,7 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
     assert(r.sets.some(([k, v]) => k === "r_lpf" && v.startsWith("1:0.")), JSON.stringify(r.sets));
     assert.equal(r.dsp.rsc, scBefore, "SIDECHAIN untouched while a pad is held");
     assert.equal(r.dsp.rds[0], 1, "other pads keep their own values");
-    assert(["VOL", "DLY", "REV", "CRS", "RNG", "LPF"].every((n) => r.printed.includes(n)), "held pad shows its six knobs");
+    assert(["VO", "DL", "RV", "CR", "RM", "LP"].every((n) => r.printed.includes(n)), "held pad shows its six knobs");
     assert.equal(lpfLabel(1), "-");
     assert.equal(lpfLabel(0), "80");
     assert(/^\d+k\d$|^\d+k$|^\d+$/.test(lpfLabel(0.5)) && lpfLabel(0.5).length <= 3, lpfLabel(0.5));
@@ -646,6 +658,34 @@ for (const key of FX_KNOBS_FOR_TEST()) {
 }
 function FX_KNOBS_FOR_TEST() { return ["bc_thresh", "bc_ratio", "bc_attack", "bc_release", "bc_schpf", "bc_makeup", "bc_punch"]; }
 console.log("PASS: BUS COMP overview values fit their cells");
+
+/* ---- a held rack pad's period button, and its empty knobs 7 and 8 -------- */
+{
+    const r = rig();
+    r.page(); r.page(); r.tick();                 /* -> RACK */
+    r.press(noteAt(0, 1)); r.tick();              /* hold pad 2: button = pad 8 */
+    assert.equal(r.leds[noteAt(0, 7)], C.RACK_PERIOD[0]);
+    for (const want of [3, 5, 7, 0, 3]) {
+        r.tap(noteAt(0, 7)); r.tick();
+        assert.equal(r.dsp.rpl[1], want);
+        assert.equal(r.leds[noteAt(0, 7)], C.RACK_PERIOD[want]);
+    }
+    r.tap(noteAt(2, 3));                          /* step 4: past a period of 3 */
+    assert(!r.sets.some(([k]) => k === "r_step"));
+    r.tap(noteAt(2, 2));                          /* step 3 is inside */
+    assert(r.sets.some(([k, v]) => k === "r_step" && v === "1:2"));
+    r.tick();
+    assert(r.printed.includes("LEN 3"), r.printed.join("|"));
+    assert(r.printed.includes("EMPTY"), r.printed.join("|"));
+    r.sets.length = 0;
+    r.turn(6, 40); r.page(); r.tick(3);
+    assert(!r.sets.some(([k, v]) => k === "r_fb" || k === "mode"), JSON.stringify(r.sets));
+    r.release(noteAt(0, 1)); r.tick();
+    r.press(noteAt(0, 7)); r.tick();              /* holding pad 8 itself: button = pad 7 */
+    r.tap(noteAt(0, 6)); r.tick();
+    assert.equal(r.dsp.rpl[7], 3);
+    console.log("PASS: period button cycles, steps past it refused, knobs 7-8 empty on a held pad");
+}
 
 /* ---- saved presets light up as soon as the screen opens -------------------- */
 {

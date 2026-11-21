@@ -71,6 +71,7 @@ typedef struct {
     void *rack_ctx;
 
     uint16_t r_pattern[HKH_RACK];
+    uint8_t r_period[HKH_RACK];    /* 0 = the whole pattern, or 3 / 5 / 7 steps */
     uint8_t r_mute[HKH_RACK];
     float r_vol[HKH_RACK];         /* 0..1, as set */
     float r_gain[HKH_RACK];        /* smoothed linear gain */
@@ -121,6 +122,7 @@ void hkh_engine_set_rack_source(hkh_engine *e, hkh_sample_source fn, void *ctx);
 
 /* Rack pads. `audition` on a step that turned on / a trigger plays the pad
  * once when the transport is stopped. */
+void hkh_engine_rack_set_period(hkh_engine *e, int pad, int period);
 void hkh_engine_rack_toggle_step(hkh_engine *e, int pad, int step);
 void hkh_engine_rack_set_mute(hkh_engine *e, int pad, int on);
 void hkh_engine_rack_set_vol(hkh_engine *e, int pad, float vol);

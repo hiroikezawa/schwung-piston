@@ -374,7 +374,8 @@ float hkh_rumble_tick(hkh_rumble *r, float kick) {
 /* ---- REVERB -------------------------------------------------------------- */
 #define REV_IDLE (44100 * 3)
 #define REV_PREDELAY 530              /* 12 ms */
-#define REV_KICK_LP_HZ 2000.0f        /* kick send lowpass, 24 dB/oct */
+#define REV_KICK_LP_HZ 600.0f         /* kick send lowpass, 24 dB/oct (2 kHz until 0.12.3:
+                                         * IND's 0.5-2 kHz grit made a high room) */
 
 void hkh_reverb_init(hkh_reverb *r) {
     memset(r, 0, sizeof(*r));

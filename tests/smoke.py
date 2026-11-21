@@ -81,7 +81,7 @@ def block(inst=None):
 
 def ui_state(inst=None):
     f = read("ui_state", inst=inst).split(",")
-    assert f[0] == "3" and len(f) == 18 + 14 + 16 + 2 + 2 + 64 + 2 + 11 + 2 + 64 + 64 + 32 + 5, f  # ... rack FB, sidechain, page-2 FX, GR, PUNCH limit, rack sends, rack LPF, RUMBLE page
+    assert f[0] == "3" and len(f) == 18 + 14 + 16 + 2 + 2 + 64 + 2 + 11 + 2 + 64 + 64 + 32 + 5 + 33, f  # ... rack FB, sidechain, page-2 FX, GR, PUNCH limit, rack sends, rack LPF, RUMBLE page
     return [int(x) for x in f]
 
 
@@ -228,13 +228,18 @@ write("k_model", 0, inst=pr); write("k_vol", 0.9, inst=pr); write("k_pattern", 1
 write("h_pattern", 0x0F0F, inst=pr)
 write("k_preset", kp_text, inst=pr)
 s2 = ui_state(pr)
-assert s2[11] == 2 and s2[3] == 0xF0 and s2[18] == 330 and s2[4] == 0x0F0F, s2[:20]
+# recall restores the sound and pattern but never VOL (0.12.2): k_vol stays 0.9
+assert s2[11] == 2 and s2[3] == 0xF0 and s2[18] == 900 and s2[4] == 0x0F0F, s2[:20]
+kp_now = read("k_preset", inst=pr)
+assert kp_now == kp_text.replace("0.3300", "0.9000", 1), kp_now
 for bad in ["", "1,2", kp_text + ",1", kp_text.replace("2,", "7,", 1), "x" + kp_text]:
     write("k_preset", bad, inst=pr)
-    assert read("k_preset", inst=pr) == kp_text, bad
-write("h_pattern", 1, inst=pr)
+    assert read("k_preset", inst=pr) == kp_now, bad
+write("h_pattern", 1, inst=pr); write("h_vol", 0.21, inst=pr)
 write("h_preset", hp_text, inst=pr)
-assert read("h_preset", inst=pr) == hp_text and ui_state(pr)[4] == 0x4444
+hp_now = read("h_preset", inst=pr).split(",")
+assert hp_now[2] == "0.2100", hp_now[:3]
+assert hp_now[:2] + hp_now[3:] == hp_text.split(",")[:2] + hp_text.split(",")[3:] and ui_state(pr)[4] == 0x4444
 
 # --- rack: steps, mute, volume, state ------------------------------------------
 write("r_step", "3:2", inst=pr)
@@ -497,6 +502,20 @@ for _ in range(200):
     time.sleep(0.01)
 assert ui_state(q)[16] == 1 << 2, "kick3.wav loaded into slot 3 only"
 destroy(q)
+
+# --- per-pad period (0.12.0): saved as rpl, absent = whole pattern ---------------
+pp = create(b".", None)
+write("r_period", "9:5", inst=pp)
+write("r_period", "10:4", inst=pp)
+assert ui_state(pp)[296 + 9] == 5 and ui_state(pp)[296 + 10] == 0
+doc = json.loads(read("state", inst=pp))
+assert doc["rpl"][9] == 5
+old_doc = dict(doc); del old_doc["rpl"]
+write("state", json.dumps(old_doc), inst=pp)
+assert ui_state(pp)[296 + 9] == 0
+write("state", json.dumps(doc), inst=pp)
+assert ui_state(pp)[296 + 9] == 5
+destroy(pp)
 
 # --- pool ---------------------------------------------------------------------
 handles = [p] + [create(b".", None) for _ in range(5)]

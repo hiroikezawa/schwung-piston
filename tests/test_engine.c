@@ -1005,6 +1005,36 @@ static double band(const float *x, int n, double hz) {
     for (int i = 0; i < n; ++i) { double s0 = x[i] + c * s1 - s2; s2 = s1; s1 = s0; }
     return s1 * s1 + s2 * s2 - c * s1 * s2;
 }
+/* 3 / 5 / 7: each pad wraps at its own period, counted from Play; the bits
+ * past it rest; 0 is the plain pattern. */
+static void test_rack_period(void) {
+    memset(CLICK, 0, sizeof(CLICK));
+    CLICK[0] = 20000;
+    static hkh_engine g;
+    const struct { int period, pattern, steps, hits; } c[] = {
+        { 3, 1, 30, 10 },        /* steps 0, 3, ... 27 */
+        { 5, 1, 30, 6 },
+        { 7, 1, 30, 5 },         /* 0, 7, 14, 21, 28 */
+        { 7, 1 << 6, 30, 4 },    /* 6, 13, 20, 27 */
+        { 3, 1 << 6, 30, 0 },    /* past the period: rests */
+        { 0, 1, 32, 4 },         /* whole 8-step pattern */
+    };
+    for (size_t k = 0; k < sizeof(c) / sizeof(c[0]); ++k) {
+        hkh_engine_init(&g, 12);
+        hkh_engine_set_rack_source(&g, rack_click, NULL);
+        g.k_pattern = g.h_pattern = 0;
+        g.r_pattern[0] = (uint16_t)c[k].pattern;
+        hkh_engine_rack_set_period(&g, 0, c[k].period);
+        assert(g.r_period[0] == c[k].period);
+        transport t = {0.0, 120.0f, 1};
+        run(&g, &t, blocks_for_steps(120, c[k].steps) - 1);
+        assert((int)g.r_hits == c[k].hits);
+    }
+    hkh_engine_rack_set_period(&g, 0, 4);        /* only 0, 3, 5, 7 */
+    assert(g.r_period[0] == 0);
+    printf("PASS: rack periods 3 / 5 / 7 wrap on their own, past-period bits rest\n");
+}
+
 static void test_rack_delay_tone(void) {
     memset(CLICK, 0, sizeof(CLICK));
     CLICK[0] = 20000;                                   /* one sample: flat */
@@ -1272,7 +1302,7 @@ static void test_fx_tails(void) {
     printf("PASS: RUMBLE + REVERB at max decay to silence (no runaway)\n");
 }
 
-/* REVERB tone: the KICK's send is lowpassed (2 kHz, 24 dB/oct), so its click
+/* REVERB tone: the KICK's send is lowpassed (600 Hz since 0.12.3, 24 dB/oct), so its click
  * never rings in the room; the HAT's send is deliberately not. White noise
  * into one send at a time; Goertzel power of the tail at 8 kHz vs 1 kHz. */
 static double goertzel(const float *x, int n, double hz) {
@@ -1281,7 +1311,7 @@ static double goertzel(const float *x, int n, double hz) {
     return s1 * s1 + s2 * s2 - c * s1 * s2;
 }
 
-static double reverb_tail_tilt(int kick) {
+static double reverb_tail_tilt(int kick, double lo_hz, double hi_hz) {
     static hkh_reverb rv;
     static float out[44100];
     hkh_reverb_init(&rv);
@@ -1298,17 +1328,20 @@ static double reverb_tail_tilt(int kick) {
     }
     double lo = 0, hi = 0;
     for (int w = 4410; w + 2048 <= 44100; w += 2048) {
-        lo += goertzel(out + w, 2048, 1000.0);
-        hi += goertzel(out + w, 2048, 8000.0);
+        lo += goertzel(out + w, 2048, lo_hz);
+        hi += goertzel(out + w, 2048, hi_hz);
     }
     return 10.0 * log10(hi / lo);
 }
 
 static void test_reverb_tone(void) {
-    double kick = reverb_tail_tilt(1), hat = reverb_tail_tilt(0);
-    printf("  reverb tail 8 kHz vs 1 kHz: kick %.1f dB, hat %.1f dB\n", kick, hat);
+    double kick = reverb_tail_tilt(1, 250.0, 8000.0), hat = reverb_tail_tilt(0, 1000.0, 8000.0);
+    double kick_mid = reverb_tail_tilt(1, 250.0, 2000.0);
+    printf("  reverb tail: kick 8 kHz vs 250 Hz %.1f dB, hat 8 kHz vs 1 kHz %.1f dB; kick 2 kHz vs 250 Hz %.1f dB\n",
+           kick, hat, kick_mid);
     fflush(stdout);
-    assert(kick < -30.0);                 /* was -3.3 dB with the send unfiltered */
+    assert(kick < -40.0);                 /* vs 250 Hz now that 1 kHz is cut too */
+    assert(kick_mid < -25.0);             /* IND's grit stays out of the room (2 kHz LP: ~-10) */
     assert(hat > -10.0);                  /* the hat's room keeps its air */
     printf("PASS: REVERB lowpasses the kick's send, not the hat's\n");
 }
@@ -1849,6 +1882,7 @@ static void test_rumble_stress(void) {
 int main(void) {
     setvbuf(stdout, NULL, _IONBF, 0);    /* every measurement shows, even before a failed assert */
     test_seq_timing();
+    test_rack_period();
     test_seq_edges();
     test_patterns();
     test_motion();

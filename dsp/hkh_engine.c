@@ -284,6 +284,7 @@ void hkh_engine_init(hkh_engine *e, uint32_t seed) {
     for (int i = 0; i < HKH_STEPS; ++i) e->motion[i] = HKH_MOTION_NONE;
     for (int i = 0; i < HKH_RACK; ++i) {
         e->r_vol[i] = HKH_RACK_DEFAULT_VOL;
+        e->r_period[i] = 0;
         e->r_gain[i] = rack_vol_gain(HKH_RACK_DEFAULT_VOL);
         e->r_lpf[i] = e->r_lpf_s[i] = 1.0f;
         e->r_dsend[i] = RACK_DSEND_DEFAULT;
@@ -340,6 +341,11 @@ void hkh_engine_rack_set_sc(hkh_engine *e, float depth) {
 void hkh_engine_rack_trigger(hkh_engine *e, int pad) {
     if (pad < 0 || pad >= HKH_RACK) return;
     e->r_pending |= 1u << pad;
+}
+
+void hkh_engine_rack_set_period(hkh_engine *e, int pad, int period) {
+    if (pad < 0 || pad >= HKH_RACK) return;
+    if (period == 0 || period == 3 || period == 5 || period == 7) e->r_period[pad] = (uint8_t)period;
 }
 
 void hkh_engine_rack_toggle_step(hkh_engine *e, int pad, int step) {
@@ -557,7 +563,7 @@ static float hat_step_decay(const hkh_engine *e, int step, int *follows_base) {
     return m >= 0.0f ? m : e->param[P_H_DECAY];
 }
 
-static void on_step(hkh_engine *e, int step) {
+static void on_step(hkh_engine *e, int step, int64_t abs_step) {
     if (e->motion_rec) e->motion[step] = e->param[P_H_DECAY];
     int ratchet_in = (int)(e->seq.step_samples * 0.5);      /* a 1/32 later */
     fill16 kf, hf;
@@ -581,8 +587,13 @@ static void on_step(hkh_engine *e, int step) {
             e->h_ratchet_decay = d;
         }
     }
-    for (int i = 0; i < HKH_RACK; ++i)
-        if ((e->r_pattern[i] >> step) & 1u) fire_rack(e, i);
+    /* A pad with a period counts from Play on its own, so the bits past the
+     * period rest rather than being lost, and 3 / 5 / 7 stay locked to the
+     * transport wherever a slot's idle gate or a jump left them. */
+    for (int i = 0; i < HKH_RACK; ++i) {
+        int st = e->r_period[i] ? (int)(abs_step % e->r_period[i]) : step;
+        if ((e->r_pattern[i] >> st) & 1u) fire_rack(e, i);
+    }
 }
 
 static void age_heartbeats(hkh_engine *e, int frames) {
@@ -675,7 +686,7 @@ void hkh_engine_render(hkh_engine *e, float *out_l, float *out_r, int frames,
 
     int ei = 0;
     for (int i = 0; i < frames; ++i) {
-        while (ei < n && ev[ei].offset <= i) { on_step(e, ev[ei].step); ++ei; }
+        while (ei < n && ev[ei].offset <= i) { on_step(e, ev[ei].step, ev[ei].abs_step); ++ei; }
         if (e->k_ratchet_in >= 0 && e->k_ratchet_in-- == 0)
             fire_kick(e, e->k_ratchet_vel);
         if (e->h_ratchet_in >= 0 && e->h_ratchet_in-- == 0)

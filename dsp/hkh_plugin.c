@@ -19,7 +19,7 @@ _Static_assert(ATOMIC_INT_LOCK_FREE == 2, "instance pool needs lock-free atomics
 
 /* Four chain slots can each hold one; two spare cover a swap in flight. */
 #define HKH_INSTANCES 6
-#define HKH_DSP_BUILD 1101         /* major*10000 + minor*100 + patch: 0.11.1; bump with module.json */
+#define HKH_DSP_BUILD 1203         /* major*10000 + minor*100 + patch: 0.12.3; bump with module.json */
 
 /* The shim parks a slot whose output stays below 5 LSB for ~1 s and renders
  * it only once every ~0.5 s after that (schwung_shim.c, DSP_IDLE_THRESHOLD).
@@ -289,6 +289,14 @@ static int restore_state(hkh_engine *e, const char *text) {
         if (!has_rlp) rlp[i] = 1.0f;
         if (!(rlp[i] >= 0.0f && rlp[i] <= 1.0f)) return 0;
     }
+    /* Per-pad period, since 0.12.0; absent = the whole pattern. */
+    float rpl[HKH_RACK];
+    int has_rpl = find_key(p, "rpl") != NULL;
+    if (has_rpl && !read_key_array(p, "rpl", rpl, HKH_RACK)) return 0;
+    for (int i = 0; i < HKH_RACK; ++i) {
+        if (!has_rpl) rpl[i] = 0.0f;
+        if (!(rpl[i] == 0.0f || rpl[i] == 3.0f || rpl[i] == 5.0f || rpl[i] == 7.0f)) return 0;
+    }
     /* RUMBLE's page (0.11.0): "rb":[5, hkh_fx.h order]. A state without it
      * (an older Set, or 0.10.0's, whose "sub" is ignored) gets the legacy
      * values, at which RUMBLE sounds exactly as it did. */
@@ -336,6 +344,7 @@ static int restore_state(hkh_engine *e, const char *text) {
     for (int k = 0; k < 4; ++k)
         for (int i = 0; i < HKH_RACK; ++i) hkh_engine_rack_set_send(e, i, k, sends[k][i]);
     for (int i = 0; i < HKH_RACK; ++i) hkh_engine_rack_set_lpf(e, i, rlp[i]);
+    for (int i = 0; i < HKH_RACK; ++i) hkh_engine_rack_set_period(e, i, (int)rpl[i]);
     for (int i = 0; i < RB_COUNT; ++i) hkh_engine_set_rumble(e, i, rbv[i]);
     for (int i = 0; has_rack && i < HKH_RACK; ++i) {
         e->r_pattern[i] = (uint16_t)rp[i];
@@ -347,6 +356,8 @@ static int restore_state(hkh_engine *e, const char *text) {
 /* ---- presets --------------------------------------------------------------
  * One voice's sound and pattern as a flat CSV the UI files away and hands
  * back. Mute and FILL are performance state and are not part of it.
+ * VOL is written (the field order never changed) but is NOT applied on
+ * recall (0.12.2): recalling a sound must not move the mix level.
  *   kick: km,ks,kp,<7 kick params>,<5 RUMBLE page values, hkh_fx.h order>
  *   hat:  hm,hp,<7 hat params>,<16 motion, -1 none>
  * Applied only if every field parses, like the state blob. A kick preset
@@ -382,7 +393,7 @@ static int apply_kick_preset(hkh_engine *e, const char *text) {
     e->k_model = (int)f[0];
     e->k_sample = (int)f[1];
     e->k_pattern = (uint16_t)f[2];
-    for (int i = 0; i < 7; ++i) hkh_engine_set_param(e, P_K_VOL + i, f[3 + i]);
+    for (int i = 1; i < 7; ++i) hkh_engine_set_param(e, P_K_VOL + i, f[3 + i]); /* not VOL */
     for (int i = 0; i < RB_COUNT; ++i) hkh_engine_set_rumble(e, i, rb[i]);
     return 1;
 }
@@ -397,7 +408,7 @@ static int apply_hat_preset(hkh_engine *e, const char *text) {
     e->h_model = (int)f[0];
     e->h_pattern = (uint16_t)f[1];
     e->motion_rec = 0;
-    for (int i = 0; i < 7; ++i) hkh_engine_set_param(e, P_H_VOL + i, f[2 + i]);
+    for (int i = 1; i < 7; ++i) hkh_engine_set_param(e, P_H_VOL + i, f[2 + i]); /* not VOL */
     for (int i = 0; i < HKH_STEPS; ++i) e->motion[i] = f[9 + i];
     return 1;
 }
@@ -453,6 +464,7 @@ static void set_param(void *ptr, const char *key, const char *val) {
         else if (!strcmp(key, "r_csend")) hkh_engine_rack_set_send(e, pad, 2, f);
         else if (!strcmp(key, "r_msend")) hkh_engine_rack_set_send(e, pad, 3, f);
         else if (!strcmp(key, "r_lpf")) hkh_engine_rack_set_lpf(e, pad, f);
+        else if (!strcmp(key, "r_period")) { if (in_int_range(f, 0, 7)) hkh_engine_rack_set_period(e, pad, (int)f); }
         else if (!strcmp(key, "r_pattern")) { if (in_int_range(f, 0, 65535)) e->r_pattern[pad] = (uint16_t)f; }
         return;
     }
@@ -555,6 +567,11 @@ static int write_ui_state(hkh_instance *inst, char *buf, int size) {
     const hkh_rumble *rb = &e->voices.rumble;
     for (int i = 0; i < RB_COUNT && n > 0 && n < size; ++i)
         n += snprintf(buf + n, size - n, ",%d", i == RB_DELAY ? (int)rb->prm[i] : milli(rb->prm[i]));
+    /* 296-327: per-pad period (0.12.0); 328: the 1/16 count mod 105, which all
+     * of 3, 5 and 7 divide, for the screen's and the pads' playheads. */
+    for (int i = 0; i < HKH_RACK && n > 0 && n < size; ++i)
+        n += snprintf(buf + n, size - n, ",%d", e->r_period[i]);
+    if (n > 0 && n < size) n += snprintf(buf + n, size - n, ",%d", (int)(e->seq.last_abs % 105));
     if (n < 0 || n >= size) { buf[0] = 0; return -1; }
     return n;
 }
@@ -595,6 +612,9 @@ static int write_state(const hkh_engine *e, char *buf, int size) {
     if (n > 0 && n < size) n += snprintf(buf + n, size - n, "],\"rlp\":[");
     for (int i = 0; i < HKH_RACK && n > 0 && n < size; ++i)
         n += snprintf(buf + n, size - n, "%s%.4f", i ? "," : "", e->r_lpf[i]);
+    if (n > 0 && n < size) n += snprintf(buf + n, size - n, "],\"rpl\":[");
+    for (int i = 0; i < HKH_RACK && n > 0 && n < size; ++i)
+        n += snprintf(buf + n, size - n, "%s%d", i ? "," : "", e->r_period[i]);
     if (n > 0 && n < size) n += snprintf(buf + n, size - n, "],\"rb\":[");
     for (int i = 0; i < RB_COUNT && n > 0 && n < size; ++i)
         n += snprintf(buf + n, size - n, "%s%.4f", i ? "," : "", e->voices.rumble.prm[i]);

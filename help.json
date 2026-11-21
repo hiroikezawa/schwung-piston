@@ -53,6 +53,9 @@
         "Hold + knob 4 = CRUSH",
         "Hold + knob 5 = RING",
         "Hold + knob 6 = LPF",
+        "Hold + top-right pad",
+        "  of that half = LEN",
+        "  FULL > 3 > 5 > 7",
         "Shift + pad = mute"
       ]
     },
