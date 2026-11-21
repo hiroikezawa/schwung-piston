@@ -27,7 +27,7 @@ fi
 cp "$MODULE/module.json" "$OUT/"
 if [[ "${1:-arm64}" == arm64 ]]; then
   python3 "$MODULE/scripts/check_abi.py" "$OUT/dsp.so"
-  for f in ui_chain.js ui_core.mjs help.json README.md; do
+  for f in ui_chain.js ui_core.mjs help.json README.md README.ja.md; do
     [[ -f "$MODULE/$f" ]] && cp "$MODULE/$f" "$OUT/"
   done
   cp "$MODULE/LICENSE" "$MODULE/THIRD_PARTY_LICENSES.md" "$OUT/"

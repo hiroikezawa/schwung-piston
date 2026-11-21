@@ -1,361 +1,571 @@
 # PISTON
 
-Ableton Move上の [Schwung](https://github.com/charlesvestal/schwung) 用サウンドジェネレーターです。インダストリアル・テクノのライブ演奏向けに、次の3つを1スロットにまとめています。
+**English** | [日本語](README.ja.md)
 
-- **ハイブリッド・キック**：アナログモデル（808 / 909 / INDUSTRIAL）とデジタルのワンショットを好きな比率でブレンド
-- **アナログ・ハイハット**：4モデル。1つのノブでクローズドからオープンまで連続的に変化
-- **ドラムラック**：自分のWAVを32個まで並べられるワンショット・サンプラー。パッドごとにステップ・ミュート・音量と、パッド専用のエフェクト（サンプルリデューサー・リングモジュレーター・ローパス）、ディレイとリバーブへの送り量
+A sound generator for [Schwung](https://github.com/charlesvestal/schwung) on Ableton Move.
+Made for live industrial techno, it puts three things in one slot:
 
-どれも8/16ステップのPADシーケンサーを持ち、Moveのテンポと再生に同期して動きます。キックとハットには、音色とパターンを丸ごと覚えておけるプリセットがそれぞれ8つあります。
+- **Hybrid kick**: blends analogue models (808 / 909 / INDUSTRIAL) with digital one-shots at
+  any ratio
+- **Analogue hi-hat**: four models. One knob moves continuously from closed to open
+- **Drum rack**: a one-shot sampler holding up to 32 of your own WAVs. Each pad has its own
+  steps, mute and level, pad-only effects (sample reducer, ring modulator, low-pass), and
+  send levels to the delay and reverb
 
-音作りの中身は作り込んでいますが、操作はシンプルにしています。メニューはなく、KICK・HAT・RACKの3画面をノブ8で切り替えます。音作りのノブは各画面7本です。ジョグを回すと各画面の2ページ目以降に移ります。KICK画面は2ページ目がRUMBLE（キックの反復で作るランブル）、3ページ目がKICK FX（キック専用のチューブ）です。HAT画面とRACK画面は2ページ目がエフェクト（HAT FX＝ハット専用の倍音付加、BUS COMP＝全体にかかるバスコンプ）です。「8/16ステップ」の設定も2ページ目以降にあります。
+Each has an 8/16-step pad sequencer that runs in sync with Move's tempo and transport. The
+kick and the hat each have eight presets that remember a whole sound and pattern.
 
-キックはすべてCに調律してあります（808 / 909 / INDUSTRIALと、デジタルのPUNCH / CRUSH / HARD / GABBERはC2＝65.4Hz、SUBはC1＝32.7Hz）。Cフリジアンなど、Cを主音にした曲にそのまま合います。
+The sound design runs deep, but the controls are kept simple. There are no menus: knob 8
+switches between three screens, KICK, HAT and RACK, and each screen has seven sound knobs.
+Turning the jog wheel moves to each screen's second and later pages. On the KICK screen,
+page 2 is RUMBLE (a rumble made by repeating the kick) and page 3 is KICK FX (a kick-only
+tube). On the HAT and RACK screens, page 2 is the effects (HAT FX = hat-only harmonic
+enhancement, BUS COMP = a bus compressor over everything). The 8/16-step setting is on page
+2 and later too.
 
-## インストール
+Every kick is tuned to C (808 / 909 / INDUSTRIAL and the digital PUNCH / CRUSH / HARD /
+GABBER to C2 = 65.4 Hz, SUB to C1 = 32.7 Hz). They fit straight into tracks with C as the
+root, such as C Phrygian.
 
-### リリースから入れる（おすすめ）
+## Installation
 
-1. [Releases](../../releases) から最新の `piston-module.tar.gz` をダウンロードします。
-2. Schwung Manager（`http://<MoveのIP>:7700`）の Modules →「Install custom」で、そのファイルをアップロードします。
-3. **Moveの電源を一度入れ直します。**
+### From a release (recommended)
 
-### ソースからビルドして入れる
+1. Download the latest `piston-module.tar.gz` from [Releases](../../releases).
+2. Upload it in Schwung Manager (`http://<Move's IP>:7700`) under Modules → "Install custom".
+3. **Power-cycle Move once.**
 
-aarch64用のクロスコンパイラ（`gcc-aarch64-linux-gnu`）とPython 3が必要です。
+### Building from source
+
+You need an aarch64 cross compiler (`gcc-aarch64-linux-gnu`) and Python 3.
 
 ```bash
-scripts/build.sh arm64                             # dist/piston-module.tar.gz を作成
-python3 scripts/install.py http://<MoveのIP>:7700  # Schwung Manager経由でアップロード
+scripts/build.sh arm64                               # creates dist/piston-module.tar.gz
+python3 scripts/install.py http://<Move's IP>:7700   # upload through Schwung Manager
 ```
 
-> **更新したら必ずMoveの電源を入れ直してください。** 一度読み込まれたDSP（dsp.so）は、スロットを読み直しても入れ替わりません。KICK画面でノブ6に触れると、画面の一番下に今動いているDSPのバージョンが表示されます。
+> **Always power-cycle Move after an update.** A DSP (dsp.so) that has been loaded is not
+> replaced by reloading the slot. Touching knob 6 on the KICK screen shows the version of the
+> DSP actually running at the very bottom of the screen.
 
-## 使い始め
+## Getting started
 
-スロットのシンセにPISTONを読み込み、そのシンセを開くと専用画面になり、PADがPISTONの操作面に変わります。MoveのPlayで再生すると、キックとハットのシーケンサーが拍の頭から同期して動き出します。画面を離れても（Back、Menu、トラック長押し）鳴り続け、PADとその色はMoveに戻ります。
+Load PISTON as a slot's synth and open that synth: you get its own screen, and the pads turn
+into PISTON's control surface. Press Play on Move and the kick and hat sequencers start in
+sync from the top of the beat. Leaving the screen (Back, Menu, holding a track) keeps it
+playing, and the pads and their colours go back to Move.
 
-## PAD
+## Pads
 
-KICK・HAT・RACKは別々の画面です。**ノブ8**を右に回すと KICK → HAT → RACK、左に回すと RACK → HAT → KICK の順に切り替わります（端で止まり、RACKからKICKへ一周することはありません）（約120度回すごとに1画面。途中で1秒止めると、それまでの回転はリセットされます）。表示していない画面のシーケンサーも止まらずに鳴り続けます。
+KICK, HAT and RACK are separate screens. Turning **knob 8** right switches KICK → HAT →
+RACK, and left RACK → HAT → KICK (it stops at the ends and never wraps from RACK back to
+KICK) (one screen per roughly 120 degrees of turn; pausing for a second resets the turn so
+far). The sequencers of screens not shown keep playing.
 
-KICK・HAT画面：
+KICK and HAT screens:
 
 ```
-1段目  [MUTE][RESET][SHUFFLE][RANDOM][FILL][セレクター1][セレクター2][ -- / REC ]
-        セレクター  KICK: ANALOG / DIGITAL    HAT: MODEL / OFFBEAT
-        右上  KICK: なし    HAT: REC（DECAYモーションの記録 ON/OFF）
-2段目  プリセット1〜8（タップで呼び出し、Shift＋タップで保存）
-3段目  16ステップ時：ステップ1-8
-4段目  8ステップ時：ステップ1-8 ／ 16ステップ時：ステップ9-16
+row 1  [MUTE][RESET][SHUFFLE][RANDOM][FILL][selector 1][selector 2][ -- / REC ]
+        selectors  KICK: ANALOG / DIGITAL    HAT: MODEL / OFFBEAT
+        top right  KICK: nothing    HAT: REC (DECAY motion recording on/off)
+row 2  presets 1-8 (tap to recall, Shift+tap to save)
+row 3  with 16 steps: steps 1-8
+row 4  with 8 steps: steps 1-8 / with 16 steps: steps 9-16
 ```
 
-| PAD | 動作 |
+| Pad | Action |
 | --- | --- |
-| ステップ | 16分音符。押すたびにON/OFF。白い光が再生位置。停止中にONにすると1回試聴できます |
-| MUTE | 緑＝発音中、赤＝ミュート。パターンや音色は消えません。ミュートの状態はSetと一緒に保存され、Setを開き直しても（Moveを再起動しても）そのまま戻ります（0.7.1から） |
-| RESET | 安全な初期状態に一発で戻します。キック：1・5拍に戻してFILLを解除。ハット：3・7（裏打ち）に戻し、DECAYモーションを全消去、DECAYを標準のクローズドに戻し、FILLと記録を解除 |
-| SHUFFLE | 今のパターンを並べ替えます（キックの1拍目は動かしません） |
-| RANDOM | 新しいパターンを作ります（キックは頭拍寄り、ハットは裏拍寄り） |
-| FILL | 押している間だけフィル（16分の連打と32分のラチェット）。離すと元のパターンに戻ります |
-| ANALOG（押しながら） | ステップ1 / 2 / 3 ＝ 808 / 909 / INDUSTRIAL |
-| DIGITAL（押しながら） | ステップ1〜5 ＝ デジタルキック1〜5（5つ並ぶと名前が入りきらないので、画面の枠は番号で、選んでいるキックの名前は上の行に出ます） |
-| MODEL（押しながら） | ステップ1〜4 ＝ 808 / 909 / METALLIC / INDUSTRIAL |
-| OFFBEAT | ハットを裏打ち（3・7）にします |
-| REC（HAT画面の右上） | DECAYモーションの記録のON/OFF。暗い赤＝OFF（初期値）、赤＝ON、白＝記録中。OFFの間はノブ3に触れてもDECAYの値が変わるだけで記録しません。記録中にOFFにするとその場で記録が止まります。ON/OFFはSetには保存されず、画面を開き直すとOFFに戻ります |
+| Steps | 1/16 notes. Each press toggles on/off. The white light is the play position. Switching a step on while stopped auditions it once |
+| MUTE | Green = sounding, red = muted. The pattern and sound are not lost. The mute state is saved with the set and comes back when the set is reopened (or Move restarted) (since 0.7.1) |
+| RESET | Returns to a safe initial state in one press. Kick: back to beats 1 and 5, FILL off. Hat: back to 3 and 7 (offbeats), all DECAY motion cleared, DECAY back to the standard closed hat, FILL and recording off |
+| SHUFFLE | Rearranges the current pattern (the kick's first beat stays put) |
+| RANDOM | Makes a new pattern (the kick favours downbeats, the hat offbeats) |
+| FILL | A fill only while held (1/16 runs and 1/32 ratchets). Letting go returns to the original pattern |
+| ANALOG (while held) | Steps 1 / 2 / 3 = 808 / 909 / INDUSTRIAL |
+| DIGITAL (while held) | Steps 1–5 = digital kicks 1–5 (five names do not fit side by side, so the screen's boxes show numbers and the selected kick's name appears on the line above) |
+| MODEL (while held) | Steps 1–4 = 808 / 909 / METALLIC / INDUSTRIAL |
+| OFFBEAT | Puts the hat on the offbeats (3 and 7) |
+| REC (top right of the HAT screen) | DECAY motion recording on/off. Dark red = off (default), red = on, white = recording. While off, touching knob 3 only changes the DECAY value and records nothing. Turning it off while recording stops the recording on the spot. On/off is not saved with the set and goes back to off when the screen is reopened |
 
-ANALOG・DIGITAL・MODELを押している間は、選択肢になるステップPADが光り（今選ばれているものが白）、画面にも一覧が出ます。停止中に選ぶと、その音を試聴できます。
+While ANALOG, DIGITAL or MODEL is held, the step pads that act as choices light up (the
+current one white), and the list also appears on screen. Choosing while stopped auditions
+that sound.
 
-**8 / 16ステップ**：ジョグを回して2ページ目に移り、ジョグを押すと切り替わります。ジョグを戻すと演奏用の画面に戻ります。キックとハットで共通で、最初は8です。8→16にすると今の8ステップが後半にコピーされるのでリズムは途切れません。16→8では前半が残ります。16ステップ時は、SHUFFLEとRANDOMが前半・後半をそれぞれ8ステップとして扱い、FILLは後半8ステップにかかります。
+**8 / 16 steps**: turn the jog wheel to page 2 and press the jog to switch. Turn the jog back
+for the performance screen. It is shared by the kick and the hat and starts at 8. Going 8→16
+copies the current 8 steps into the second half so the rhythm carries on; 16→8 keeps the
+first half. With 16 steps, SHUFFLE and RANDOM treat each half as its own 8 steps, and FILL
+acts on the second 8 steps.
 
-### プリセット
+### Presets
 
-KICK画面とHAT画面の2段目が、それぞれ8つのプリセットです。キックとハットのプリセットは別々に保存されます。
+Row 2 of the KICK and HAT screens holds eight presets each. Kick and hat presets are stored
+separately.
 
-- **保存**：Shiftを押しながらPADをタップ。今の音色（モデル・デジタルキック・ノブ1〜7）とパターンを覚えます。ハットはDECAYモーションも含みます。ミュートとFILLは含みません。
-- **呼び出し**：PADをタップ。再生中でもすぐに切り替わります。
-- 色：消灯＝空き、薄い色＝保存済み、白＝最後に呼び出した（保存した）もの。
+- **Save**: hold Shift and tap a pad. It remembers the current sound (model, digital kick,
+  knobs 2–7) and the pattern. For the hat it includes the DECAY motion. Mute, FILL and knob
+  1's VOL (level) are not included; switching presets does not change the level.
+- **Recall**: tap a pad. It switches at once, even while playing.
+- Colours: off = empty, dim = saved, white = the one last recalled (or saved).
 
-プリセットはSetとは関係なく、`/data/UserData/schwung/piston-presets.json` に保存されます。どのSetのどのスロットのPISTONからも同じ8つが使えます。
+Presets are stored independently of sets in `/data/UserData/schwung/piston-presets.json`. The
+same eight are available to PISTON in any slot of any set.
 
-SHUFFLE・RANDOM・FILLの規則は `dsp/hkh_pattern.c` の先頭にある表で調整できます。
+The rules for SHUFFLE, RANDOM and FILL can be adjusted in the table at the top of
+`dsp/hkh_pattern.c`.
 
-## ノブ
+## Knobs
 
-| ノブ | KICK | HAT |
+| Knob | KICK | HAT |
 | --- | --- | --- |
 | 1 | VOLUME | VOLUME |
 | 2 | ANALOG / DIGITAL MIX | COLOR / METAL |
-| 3 | DECAY | DECAY（クローズド→オープン） |
+| 3 | DECAY | DECAY (closed → open) |
 | 4 | DRIVE | DRIVE |
 | 5 | COMP | COMP |
 | 6 | RUMBLE | FILTER |
-| 7 | REVERB | なし |
-| 8 | 画面切り替え（KICK / HAT / RACK） | 画面切り替え（KICK / HAT / RACK） |
+| 7 | REVERB | nothing |
+| 8 | Screen switch (KICK / HAT / RACK) | Screen switch (KICK / HAT / RACK) |
 
-ノブに触れると、その値が画面に大きく表示されます。ノブ8は回した量を足していき、約120度で1画面進みます。
+Touching a knob shows its value large on screen. Knob 8 adds up how far you turn it and
+moves one screen per roughly 120 degrees.
 
-- **MIX**：等パワーのクロスフェード。0＝アナログのみ、50%＝両方を−3dBずつ、100%＝デジタルのみ。デジタルキックはアナログと体感音量をそろえてあるので、MIXは音量ではなく混ぜ具合だけが変わります（低域どうしが一部打ち消し合い、組み合わせによっては50%で数dB小さくなることがあります）。
-- **DECAY（キック）**：アナログ側の余韻の長さ。モデルごとに音楽的な範囲に合わせています（808：約0.2〜2.6秒、909：0.1〜1.3秒、IND：0.08〜1.8秒）。鳴っている最中に回すと、その余韻も変わります。
-- **DECAY（ハット）**：0%＝少し余韻のあるクローズド（初期値・RESETの戻り先）、50%＝オープン、100%＝長いオープン。音量の減衰だけでなく、開くほどアタックの「チッ」が弱まり、ノイズの「シャー」が増え、低い成分も出て、金属の響きが細くなります。
-- **DRIVE**：0＝クリーン（完全に素通し）から、強い非対称の歪みまで。歪ませても音量が上がりすぎないよう補正し、耳障りな高域は自動で抑えます。
-- **COMP**：パンチ系のコンプです。1打ごとにアタック（キック約12ms、ハット約2ms）はそのまま通し、その後の胴と余韻を下げます。上げるほど短く締まった音になり（余韻が半分になる目安：キック約170ms→12ms、ハット約85ms→4ms）、アタックの強さは変わりません。余韻を持ち上げることはありません。初期値は25%です。
-- **RUMBLE（キック）**：ランブルの量。0＝オフ、新しいSetでは50%から始まります。キックの音そのものを1/8のディレイで繰り返して、裏拍に「ボ」を鳴らします。上げるほど大きく、低く、汚くなります。細かい設定はKICK画面の2ページ目（下の「RUMBLE」）にあります。
-- **FILTER（ハット）**：0側で暗く、1側で明るく細く。
-- **COLOR / METAL（ハット）**：上げるほど金属的に（音程が上がり、ノイズが減り、響きが鋭く）。
-- **REVERB**（KICKのみ）：キックのルームリバーブへの送り量。送りは180Hz〜2kHzに絞ってあります（2kHzから上は24dB/octでカット）。低域はRUMBLEとぶつからず、キックのアタックのクリックやデジタルキックの高域は残響に乗りません。ハットのリバーブは0.9.2でなくしました（HAT画面のノブ7は何もしません。以前のSetやプリセットでハットのリバーブを上げていても、鳴りません）。
+- **MIX**: an equal-power crossfade. 0 = analogue only, 50 % = both at −3 dB, 100 % = digital
+  only. The digital kicks are matched in perceived level to the analogue ones, so MIX changes
+  only the blend, not the level (the lows partly cancel each other, so some combinations get
+  a few dB quieter at 50 %).
+- **DECAY (kick)**: the length of the analogue side's tail, fitted to a musical range for
+  each model (808: about 0.2–2.6 s, 909: 0.1–1.3 s, IND: 0.08–1.8 s). Turning it while a kick
+  is ringing changes that tail too.
+- **DECAY (hat)**: 0 % = a closed hat with a little tail (the default and RESET's target),
+  50 % = open, 100 % = long open. It is not just the level's decay: the more it opens, the
+  weaker the attack's "tsk", the more noise "shhh", some lower content appears, and the metal
+  ring gets thinner.
+- **DRIVE**: from 0 = clean (fully transparent) to strong asymmetric distortion. The level is
+  compensated so distortion does not make it too loud, and harsh highs are tamed
+  automatically.
+- **COMP**: a punch-style compressor. On each hit the attack (about 12 ms for the kick, 2 ms
+  for the hat) passes untouched and the body and tail after it are lowered. Higher gives a
+  shorter, tighter sound (time for the tail to halve, roughly: kick 170 ms → 12 ms, hat 85 ms
+  → 4 ms) without changing the attack's strength. It never lifts the tail. Default 25 %.
+- **RUMBLE (kick)**: the amount of rumble. 0 = off; a new set starts at 50 %. It repeats the
+  kick's own sound with a 1/8 delay to put a "bo" on the offbeat. Higher is louder, lower and
+  dirtier. The detailed settings are on page 2 of the KICK screen ("RUMBLE" below).
+- **FILTER (hat)**: darker towards 0, brighter and thinner towards 1.
+- **COLOR / METAL (hat)**: higher is more metallic (higher pitch, less noise, sharper ring).
+- **REVERB** (KICK only): send level to the kick's room reverb. The send is limited to
+  180 Hz–600 Hz (cut at 24 dB/oct above 600 Hz). The lows do not clash with RUMBLE, and the
+  click of the kick's attack, the digital kicks' highs and IND's grit never reach the reverb.
+  The hat reverb was removed in 0.9.2 (knob 7 on the HAT screen does nothing; even if hat
+  reverb was raised in an older set or preset, it does not sound).
 
-出力にはDCカットと −0.5dBFS のリミッターがかかっていて、どんな設定でもそれ以上の音は出ません。キック側（キック＋RUMBLE）にも専用の上限があり、キックを盛ってもハットが埋もれないようにしています。
+The output has DC removal and a −0.5 dBFS limiter, so no setting produces anything louder.
+The kick side (kick + RUMBLE) also has its own ceiling, so piling on the kick does not bury
+the hat.
 
-## RUMBLE（KICK画面の2ページ目）
+## RUMBLE (page 2 of the KICK screen)
 
-KICK画面で**ジョグを1つ回す**とRUMBLEのページです。キックの裏拍に「ボ」が1回鳴る、テクノのランブルを作ります。
+**Turn the jog wheel one step** on the KICK screen for the RUMBLE page. It makes the techno
+rumble where one "bo" sounds on each kick's offbeat.
 
 ```
-8分の位置：  1     2
-キック：     ズ
-RUMBLE：           ボ
+eighth note:  1     2
+kick:         thud
+RUMBLE:             bo
 ```
 
-反復の間隔は**1/8で固定**です（0.11.1から。0.11.0には1/16と1/32もありました）。2回目の反復は次のキックと重なりますが、DUCKで消えるので、聞こえるのは毎拍「ズ・ボ」です。
+The repeat interval is **fixed at 1/8** (since 0.11.1; 0.11.0 also had 1/16 and 1/32). The
+second repeat overlaps the next kick but disappears under DUCK, so what you hear is "thud-bo"
+on every beat.
 
-「ボ」は音量のゲートで作った音でも、別のベース音源でもありません。**キックの音そのものをディレイで繰り返した音**です。サイン波などの発振器は足していないので、Cに調律したキックの音程のまま、キックと自然につながります。
+The "bo" is neither a sound made by a volume gate nor a separate bass voice. **It is the
+kick's own sound repeated by a delay.** No sine or other oscillator is added, so it keeps the
+pitch of the kick tuned to C and joins the kick naturally.
 
-| ノブ | 名前 | 範囲 | 初期値 | 働き |
+| Knob | Name | Range | Default | What it does |
 | --- | --- | --- | --- | --- |
-| 1 | RMB（RUMBLE） | 0〜100% | 50% | ランブル全体の量（1ページ目のノブ6と同じ値） |
-| 2 | FB（FEEDBACK） | 0〜100% | 60% | 反復の続き方。低いと「ボ」1回で消え、上げるほど次の拍以降へ長く尾を引く |
-| 3 | DEF（DEFINITION） | 0〜100% | 75% | 「ボ」の輪郭（下の説明） |
-| 4 | DAMP（DAMPING） | 0〜100% | 70% | 高域の削り具合。低いと硬く、高いと暗く丸い |
-| 5 | DUCK | 0〜100% | 80% | キックが鳴る瞬間にランブルを下げる深さ |
-| 6・7 | なし | | | |
-| 8 | 画面切り替え | | | 1ページ目と同じ |
+| 1 | RMB (RUMBLE) | 0–100 % | 50 % | Overall amount of rumble (the same value as knob 6 on page 1) |
+| 2 | FB (FEEDBACK) | 0–100 % | 60 % | How the repeats carry on. Low dies after one "bo"; higher trails on into later beats |
+| 3 | DEF (DEFINITION) | 0–100 % | 75 % | The outline of the "bo" (explained below) |
+| 4 | DAMP (DAMPING) | 0–100 % | 70 % | How much high end is shaved off. Low is hard, high is dark and round |
+| 5 | DUCK | 0–100 % | 80 % | How deeply the rumble is lowered at the moment the kick sounds |
+| 6, 7 | nothing | | | |
+| 8 | Screen switch | | | Same as page 1 |
 
-画面の上には反復の間隔（1/8）と、DEFINITIONの状態（DIFFUSE / SMOOTH REPEATS / CLEAR REPEATS）が出ます。ノブに触れると、その値が大きく表示されます。
+The top of the screen shows the repeat interval (1/8) and DEFINITION's state (DIFFUSE /
+SMOOTH REPEATS / CLEAR REPEATS). Touching a knob shows its value large.
 
-**DEFINITION**がいちばん大事なノブです。ランブルは2つの経路を混ぜて作っています。
+**DEFINITION** is the most important knob. The rumble is made by mixing two paths.
 
-- **反復の経路**：キックの音をローパスで丸めてから、テンポに同期した1/8のディレイで繰り返します。キックが鳴るたびに送りの「窓」が開き、反復が来る前に閉じるので、「ボ」が独立したかたまりになります。
-- **拡散の経路**：0.10.0までのRUMBLEそのものです。小さく暗いフィードバック・ディレイ網（4本）が、ゴロゴロした残響を作ります。
+- **The repeat path**: the kick's sound is rounded with a low-pass, then repeated by a 1/8
+  delay synced to the tempo. Each kick opens the send "window", which closes before the repeat
+  arrives, so the "bo" is a separate lump.
+- **The diffuse path**: the RUMBLE of 0.10.0 and earlier itself. A small, dark feedback delay
+  network (4 lines) makes a rumbling reverb.
 
-| DEFINITION | 音 | 「ボ」の後の隙間（実測） |
+| DEFINITION | Sound | Gap after the "bo" (measured) |
 | --- | --- | --- |
-| 0% | 0.10.0までと同じゴロゴロした残響 | 約11dB |
-| 50% | 太い低音がなめらかにうねる「ズ・ボォ」 | 約17dB |
-| 75%（初期値） | 「ズ・ボ」がはっきり。下に少し残響 | 約21dB |
-| 100% | 反復だけ。「ボ」と次のキックの間にはっきりした空間ができる | 約38dB |
+| 0 % | The same rumbling reverb as 0.10.0 and earlier | about 11 dB |
+| 50 % | A fat bass rolling smoothly, "thud-booo" | about 17 dB |
+| 75 % (default) | A clear "thud-bo", with a little reverb underneath | about 21 dB |
+| 100 % | Repeats only. A clear space between the "bo" and the next kick | about 38 dB |
 
-DEFINITIONを上げると、反復と残響の比率だけでなく、送りの窓が短くなり（反復の間の空間が広がり）、残響の尾が短くなり、DUCKがキックの音量ではなく拍の位置に合わせて働くようになります。音量の差は、ノブの端から端まで約6dBに収まるようにしています（反復の間が無音になる分、75%から上では反復を少し持ち上げています）。
+Raising DEFINITION not only changes the ratio of repeats to reverb: the send window gets
+shorter (widening the space between repeats), the reverb tail gets shorter, and DUCK follows
+the beat position instead of the kick's level. The level difference is kept within about
+6 dB from one end of the knob to the other (because the gaps between repeats go silent, the
+repeats are lifted a little above 75 %).
 
-**DUCK**は、キックが鳴る瞬間にランブルを下げてアタックをはっきりさせます。「ボ」が来る前に必ず戻るので、「ボ」は削りません。新しいキックが鳴ると、前のキックの反復のうちループに残っている分も弱めるので、前の反復が次の拍に重なって溜まっていくことがありません。
+**DUCK** lowers the rumble at the moment the kick sounds so the attack stays clear. It always
+recovers before the "bo" arrives, so it does not shave the "bo". When a new kick sounds it also
+weakens what remains in the loop of the previous kick's repeats, so earlier repeats never pile
+up over the next beat.
 
-テンポが変わったときは、新しい間隔へ20msでクロスフェードします（音程が揺れたり、プツッと鳴ったりしません）。
+When the tempo changes it crossfades to the new interval over 20 ms (no pitch wobble and no
+clicks).
 
-測定値（909、RUMBLE 50%、初期値）：132 / 136 / 140 BPMのどれでも、裏拍に「ボ」が1回出て、その後に約20〜26dBの隙間があります。「ボ」はキックの下ではなく裏拍で鳴り（キックの下に残るのは「ボ」より8dB以上小さい）、ピークはキックより約5dB小さくなっています。FEEDBACK 100%・RUMBLE 100%・DEFINITION 100%・DAMPING 0%で、テンポやモデルを切り替えながら1分間鳴らしても、音量が増え続けることはなく、止めれば消えます。
+Measurements (909, RUMBLE 50 %, defaults): at 132 / 136 / 140 BPM alike, one "bo" appears on
+the offbeat followed by a gap of about 20–26 dB. The "bo" sounds on the offbeat rather than
+under the kick (what remains under the kick is more than 8 dB below the "bo"), and its peak is
+about 5 dB below the kick. With FEEDBACK 100 %, RUMBLE 100 %, DEFINITION 100 % and DAMPING 0 %,
+playing for a minute while switching tempos and models never keeps getting louder, and it dies
+away when stopped.
 
-**以前のSetやプリセット**（0.10.0のPISTON SUB入りのものを含む）を開くと、RUMBLEページは「DEFINITION 0%・他は中間値」で読み込まれます。この設定では**RUMBLEは0.10.0までとサンプル単位でまったく同じ音**です（旧コードとの比較テストで確認しています）。RUMBLEページの値はSetと、キックのプリセット（PAD 2段目）に保存されます。0.11.0で1/16や1/32にして保存したSetも開けます（1/8になります）。
+**Older sets and presets** (including ones with 0.10.0's PISTON SUB) open with the RUMBLE page
+at "DEFINITION 0 %, the rest at middle values". In this setting **RUMBLE sounds exactly the same
+as 0.10.0 and earlier, sample for sample** (confirmed by a comparison test against the old
+code). The RUMBLE page's values are saved with the set and in kick presets (pad row 2). Sets
+saved with 1/16 or 1/32 in 0.11.0 still open (they become 1/8).
 
-0.10.0で入れたPISTON SUB（キックで鳴らすサブベース）は、0.11.0にはありません。ランブルはキック自身の反復で作る方針にしたためです。0.10.0のSetやプリセットに入っているSUBの設定は読み飛ばし、それ以外はそのまま開きます。
+PISTON SUB (a sub-bass played by the kick), added in 0.10.0, is not in 0.11.0, because the
+rumble is now made by the kick's own repeats. SUB settings in 0.10.0 sets and presets are
+skipped and everything else opens as is.
 
-## エフェクトのページ
+## Effect pages
 
-各画面でジョグを回すとエフェクトのページに移り、ノブがエフェクト用に切り替わります（KICK画面は3ページ目、HAT画面とRACK画面は2ページ目）。ジョグを戻すと1ページ目に戻ります。PADの働きは1ページ目と同じで、ノブ8も同じくKICK / HAT / RACKの切り替えです（1ページ目以外にいるときは、隣の画面のエフェクトのページへ移ります）。1ページ目以外でジョグを押すと、これまでどおり8/16ステップが切り替わります。
+Turning the jog wheel on each screen moves to its effect page, and the knobs switch to the
+effect (page 3 on the KICK screen, page 2 on the HAT and RACK screens). Turning the jog back
+returns to page 1. The pads work as on page 1, and knob 8 still switches KICK / HAT / RACK
+(away from page 1 it moves to the neighbouring screen's effect page). Pressing the jog on any
+page other than page 1 switches 8/16 steps as before.
 
-どのエフェクトも**初期値はオフ**です。0.7.0より前に保存したセットやプリセットは、まったく同じ音で鳴ります（キック3種×ハット4種の全出力を0.6.5とビット単位で比較して確認済み）。エフェクトのページの値はセットに保存されます。キック／ハットのプリセット（PAD 2段目）には含まれません。
+Every effect is **off by default**. Sets and presets saved before 0.7.0 sound exactly the same
+(confirmed by bit-comparing every output of 3 kicks × 4 hats with 0.6.5). Effect page values
+are saved with the set. They are not part of the kick / hat presets (pad row 2).
 
-### KICK FX（キック専用のチューブ、KICK画面の3ページ目）
+### KICK FX (a kick-only tube, page 3 of the KICK screen)
 
-| ノブ | 名前 | 範囲 | 初期値 |
+| Knob | Name | Range | Default |
 | --- | --- | --- | --- |
-| 1 | SAT | 0〜100% | 0%（オフ） |
-| 2 | DRIVE | 0〜24dB | 6dB |
+| 1 | SAT | 0–100 % | 0 % (off) |
+| 2 | DRIVE | 0–24 dB | 6 dB |
 
-キック全体（サブも含む）を、非対称のチューブ型サチュレーションで太くします。キックはPISTONの中で単独の信号なので、帯域を分ける処理はしていません。サブも歪ませるので、低音の出ない小さなスピーカー（Moveの内蔵スピーカーなど）でもサブの倍音が聞こえ、迫力が出ます。原音はそのまま通し、歪みが作った「差分」だけを足す方式です。6kHzより上の成分は曲げません（これは音作りではなく、デジタルの歪みで出る折り返しノイズを防ぐためです）。
+Fattens the whole kick (sub included) with asymmetric, tube-style saturation. The kick is a
+single signal inside PISTON, so there is no band splitting. The sub is distorted too, so even
+on small speakers that cannot reproduce lows (such as Move's built-in speaker) the sub's
+harmonics are heard and it gains impact. The dry sound passes as is and only the "difference"
+the distortion creates is added. Content above 6 kHz is not bent (not as sound design, but to
+prevent the aliasing that digital distortion produces).
 
-- **SAT**：歪みを混ぜる量と、非対称さ（偶数次倍音）の強さ。0%で完全に素通しです。
-- **DRIVE**：チューブに入れるレベル。上げるほど、胴や余韻などの小さい部分が持ち上がり、大きい部分は潰れて、キックが太く密になります。ピークはほとんど上がらず、平均の音量（体感の大きさ）が上がります。
+- **SAT**: how much distortion is mixed in, and how strong the asymmetry (even harmonics) is.
+  At 0 % it is fully transparent.
+- **DRIVE**: the level going into the tube. Higher lifts the small parts such as the body and
+  tail and squashes the large parts, making the kick fat and dense. The peak hardly rises; the
+  average level (perceived loudness) does.
 
-1ページ目のDRIVEとの違い：1ページ目のDRIVEは上げるほど高域を抑えて暗くなる歪みで、音量が上がらないよう補正しています。KICK FXは暗くならず、小さい部分を持ち上げて密度と体感音量を上げます。
+How it differs from page 1's DRIVE: page 1's DRIVE is a distortion that gets darker as it
+rises, with the level compensated so it does not get louder. KICK FX does not darken; it lifts
+the small parts to raise density and perceived loudness.
 
-測定値（キックのみ、SAT 100%・DRIVE 24dB）：平均の音量が808で+7.0dB、909で+5.3dB、INDで+4.9dB。サブ（100Hz以下）は+7〜9dB。ピークは0.59〜0.63から0.65〜0.74へ（キックの上限0.8の中に収まります）。
+Measurements (kick only, SAT 100 %, DRIVE 24 dB): average level +7.0 dB on the 808, +5.3 dB on
+the 909, +4.9 dB on IND. The sub (below 100 Hz) +7–9 dB. Peaks from 0.59–0.63 to 0.65–0.74
+(within the kick's 0.8 ceiling).
 
-### HAT FX（ハット専用の倍音付加）
+### HAT FX (hat-only harmonic enhancement)
 
-| ノブ | 名前 | 範囲 | 初期値 |
+| Knob | Name | Range | Default |
 | --- | --- | --- | --- |
-| 1 | HARM | 0〜100% | 0%（オフ） |
+| 1 | HARM | 0–100 % | 0 % (off) |
 | 2 | FREQ | 1.9k / 2.8k / 6.6k / 9.8k | 6.6k |
 
-選んだ帯域の成分から倍音（2次、1.9k・2.8kでは3次も）を**生成して足します**。EQのブーストではないので、元の音の大きさは変わりません。
+**Generates and adds** harmonics (2nd, plus 3rd at 1.9k and 2.8k) from the content of the
+chosen band. It is not an EQ boost, so the original sound's level does not change.
 
-- 1.9k・2.8k：ハットの芯、アタックの「チッ」の明瞭さ
-- 6.6k・9.8k：空気感、きらめき
+- 1.9k, 2.8k: the hat's core, the clarity of the attack's "tsk"
+- 6.6k, 9.8k: air, sparkle
 
-ハットはノイズ状の音なので、効き方はさりげないです。測定値（HARM 100%）：9.8kで8kHz以上が+1.2dB、2.8kで1〜8kHz帯が+0.9dB。FREQは回すと少しずつ移る（スイープする）ので、切り替えてもクリックしません。
+The hat is a noise-like sound, so the effect is subtle. Measurements (HARM 100 %): +1.2 dB
+above 8 kHz at 9.8k, +0.9 dB in the 1–8 kHz band at 2.8k. FREQ moves gradually when turned (it
+sweeps), so switching does not click.
 
-### BUS COMP（RACK画面の2ページ目、PISTON全体にかかる）
+### BUS COMP (page 2 of the RACK screen, over all of PISTON)
 
-| ノブ | 名前 | 範囲 | 初期値 |
+| Knob | Name | Range | Default |
 | --- | --- | --- | --- |
-| 1 | THRSH | -36〜0dBFS | -12dB |
+| 1 | THRSH | -36 to 0 dBFS | -12 dB |
 | 2 | RATIO | OFF / 2:1 / 4:1 / 10:1 | OFF |
-| 3 | ATK | 1〜30ms | 30ms |
-| 4 | REL | 50〜600ms | 150ms |
-| 5 | SCHPF | 20〜200Hz | 90Hz |
-| 6 | MKUP | -12〜+12dB | 0dB |
+| 3 | ATK | 1–30 ms | 30 ms |
+| 4 | REL | 50–600 ms | 150 ms |
+| 5 | SCHPF | 20–200 Hz | 90 Hz |
+| 6 | MKUP | -12 to +12 dB | 0 dB |
 | 7 | PUNCH | OFF / ON | ON |
 
-キック・ハット・リバーブ・ラック（ディレイ込み）を足した**PISTONの出力全体**にかかる、ステレオリンクのグルーコンプです。出力のリミッターの手前に入ります。
+A stereo-linked glue compressor over **PISTON's whole output**, the sum of kick, hat, reverb and
+rack (delay included). It sits before the output limiter.
 
-- **RATIO**：OFFでコンプ全体（MAKEUPも含めて）が外れ、完全に素通しになります。2:1は自然なまとまり、4:1は強め、10:1は意図的な潰し。
-- **SCHPF**：検出回路だけにかかるハイパスです。音にはかかりません。キックの低域だけでコンプが反応しすぎるのを防ぎます。
-- **MKUP**：圧縮で下がった音量を持ち上げます。上げても出力のリミッター（-0.5dBFS）は超えません。
-- **PUNCH**：ONの間、コンプが実際に使う値だけを、キックのアタックが残る方向に制限します（アタック25ms以上、リリース100ms以上、10:1は4:1として動作、SCHPF 80Hz以上）。ノブの値は書き換えません。制限している時は、PUNCHの値の横に「*」が付きます。
-- 画面右上に**GR**（ゲインリダクション、dB）が出ます。目安は1〜3dBです。
+- **RATIO**: OFF takes the whole compressor out (MAKEUP included) and makes it fully
+  transparent. 2:1 is natural glue, 4:1 strong, 10:1 deliberate squashing.
+- **SCHPF**: a high-pass on the detector only. It does not touch the sound. It keeps the
+  compressor from reacting too much to the kick's lows alone.
+- **MKUP**: raises the level lost to compression. Even raised, it never exceeds the output
+  limiter (-0.5 dBFS).
+- **PUNCH**: while ON, it limits only the values the compressor actually uses, in the direction
+  that keeps the kick's attack (attack 25 ms or more, release 100 ms or more, 10:1 acts as 4:1,
+  SCHPF 80 Hz or more). The knob values are not rewritten. While it is limiting, a "*" appears
+  next to PUNCH's value.
+- **GR** (gain reduction, dB) appears at the top right of the screen. 1–3 dB is a good guide.
 
-測定値（標準のグルーヴ、THRSH -24dB）：4:1で-6.2dB、10:1（PUNCH OFF）で-7.3dB。PUNCH ONなら10:1と4:1は同じ出力です。
+Measurements (a standard groove, THRSH -24 dB): -6.2 dB at 4:1, -7.3 dB at 10:1 (PUNCH OFF).
+With PUNCH ON, 10:1 and 4:1 give the same output.
 
-## ハットのDECAYモーション
+## Hat DECAY motion
 
-HAT画面の右上のPAD（REC）を**ON**にしてから、1ページ目で**ノブ3に触れている間だけ**、DECAYの値を記録します（RECがOFFの時や、2ページ目のノブ3では記録しません）。触れている間、再生位置が通過したステップすべてにその時のDECAYが書き込まれ、指を離すと記録が止まります。記録したステップは毎ループその値で鳴り、記録していないステップはノブの値に従います。
+Turn the top-right pad of the HAT screen (REC) **ON**, then on page 1 the DECAY value is recorded
+**only while you touch knob 3** (nothing is recorded with REC off or from knob 3 on page 2).
+While you touch it, every step the play position passes gets the DECAY of that moment; letting
+go stops recording. Recorded steps play with that value every loop, and unrecorded steps follow
+the knob.
 
-例：3ステップ目が鳴る時にDECAYを小さくして触れ、7ステップ目の辺りでDECAYを大きくして触れると、同じ裏打ちハットが「チッ…シャー」と鳴り分けます。
+Example: touch with DECAY small as step 3 plays, then with DECAY large around step 7, and the
+same offbeat hat alternates "tsk… shhh".
 
-DECAYの長いステップはPADが**青**く光り、画面では各ステップのマス内に記録値が棒で表示されます。ハットのRESETで全部消えます。再生していない時は再生位置がないので記録されません。
+Steps with a long DECAY light **blue** on the pads, and the screen shows each step's recorded
+value as a bar inside its box. The hat's RESET clears them all. Nothing is recorded while not
+playing, because there is no play position.
 
-## 音のしくみ
+## How it sounds the way it does
 
-**アナログキック**は、1つのキックの設定違いではなく、それぞれ別の作りです。
+The **analogue kicks** are each built differently, not one kick with different settings.
 
-- **808**：サイン波の胴、ゆるやかで浅いピッチの下降、少し保持してから長く減衰、柔らかいアタック
-- **909**：三角波を整形した胴をアタックで強く歪ませ、急なピッチ下降、ノイズとパルスによるクリック
-- **INDUSTRIAL**：非整数比（1.414）の位相変調による胴（FMの深さとウェーブフォールドが時間とともに減っていく）、急な2段階のピッチ降下、矩形パルスとノイズのアタックが2つの高Qの金属共振器を叩き、内部で非対称サチュレーションをかけています（「ゴン」「ガン」という質感）。このザラつき（位相変調・ウェーブフォールド・非対称サチュレーション）はアタックの最初の約25msだけで、その後の約25msで消え、余韻は808と同じ丸い胴になります。DECAYを長くしても、伸びるのはきれいな低音だけです（0.9.4から。それまではDECAYを上げると角ばった矩形波のまま伸びて、バリバリと歪んで聞こえました）
+- **808**: a sine body, a gentle and shallow pitch drop, a short hold and then a long decay, a
+  soft attack
+- **909**: a body shaped from a triangle wave and driven hard at the attack, a steep pitch drop,
+  a click made of noise and a pulse
+- **INDUSTRIAL**: a body from non-integer-ratio (1.414) phase modulation (the FM depth and the
+  wavefold fall away over time), a steep two-stage pitch drop, a square pulse and noise attack
+  striking two high-Q metal resonators, and asymmetric saturation inside (a "gong", "clang"
+  texture). This grit (phase modulation, wavefold, asymmetric saturation) lasts only for the
+  first ~25 ms of the attack and fades over the next ~25 ms, leaving a tail with the same round
+  body as the 808. A longer DECAY only stretches the clean low end (since 0.9.4; before that,
+  raising DECAY stretched the angular square wave itself, which sounded crackly and distorted)
 
-**ハット**はすべてアナログ風です。非整数比の矩形波6本（帯域制限つき）、ノイズ、2つのバンドパス、ハイパス/ローパス、VCAで構成しています。808は定番の金属クラスター、909はより明るくノイズ多め、METALLICは矩形波どうしをリング変調して響くバンドパスに通し、INDUSTRIALはノイズをクラスターでリング変調して強く歪ませ、サンプル&ホールドをかけています。
+The **hats** are all analogue-style: six band-limited square waves at non-integer ratios, noise,
+two band-passes, a high-pass/low-pass and a VCA. The 808 is the classic metal cluster, the 909
+brighter with more noise, METALLIC ring-modulates the square waves against each other through a
+ringing band-pass, and INDUSTRIAL ring-modulates noise with the cluster, drives it hard and adds
+sample & hold.
 
-**デジタルキック**1〜5（PUNCH / SUB / CRUSH / HARD / GABBER）は内蔵です。
+**Digital kicks** 1–5 (PUNCH / SUB / CRUSH / HARD / GABBER) are built in.
 
-- **GABBER**（0.9.3で追加）：ガバキック。909系の深く速いピッチ下降（約250Hz→C2）の胴を、非対称に強く歪ませてからハードクリップし、ほぼ矩形波まで潰しています。胴の減衰を長くしてあるので、潰れたまま「ドゥーン」と伸びる時間が約0.4秒続き、0.9秒で消えます。直流分は取り除き、9kHzより上のジリジリだけ少し丸めています。ほかのデジタルキックと同じく、鳴り始め150msの音量をアナログキックにそろえてあります。
+- **GABBER** (added in 0.9.3): a gabber kick. A body with a deep, fast 909-style pitch drop
+  (about 250 Hz → C2), driven hard and asymmetrically and then hard-clipped, squashed almost to a
+  square wave. The body's decay is long, so the squashed "doooon" lasts about 0.4 s and is gone at
+  0.9 s. DC is removed and only the fizz above 9 kHz is rounded a little. Like the other digital
+  kicks, its level over the first 150 ms is matched to the analogue kicks.
 
-**キックのピッチ**：どのキックも、鳴り始めは高く、すぐに下降して最後に落ち着く音が決まっています。落ち着く音は**C**にそろえてあります（0.11.0から。0.9.0〜0.10.0はA1の55Hzでした）。ピッチを変えるノブはなく、MIDIのノート番号でも変わりません。
+**Kick pitch**: every kick starts high, drops quickly and settles on a fixed note. That settling
+note is matched to **C** (since 0.11.0; from 0.9.0 to 0.10.0 it was A1, 55 Hz). There is no knob
+that changes pitch, and the MIDI note number does not change it either.
 
-| キック | 落ち着く音 | 鳴り始め |
+| Kick | Settling note | Start |
 | --- | --- | --- |
-| 808 | C2（65.4Hz） | 約135Hz |
-| 909 | C2（65.4Hz） | 約261Hz |
-| INDUSTRIAL | C2（65.4Hz） | 約550Hz |
-| PUNCH | C2（65.4Hz） | 約216Hz |
-| SUB | C1（32.7Hz） | 約64Hz |
-| CRUSH | C2（65.4Hz） | 約241Hz |
-| HARD | C2（65.4Hz） | 約340Hz |
-| GABBER | C2（65.4Hz） | 約255Hz |
+| 808 | C2 (65.4 Hz) | about 135 Hz |
+| 909 | C2 (65.4 Hz) | about 261 Hz |
+| INDUSTRIAL | C2 (65.4 Hz) | about 550 Hz |
+| PUNCH | C2 (65.4 Hz) | about 216 Hz |
+| SUB | C1 (32.7 Hz) | about 64 Hz |
+| CRUSH | C2 (65.4 Hz) | about 241 Hz |
+| HARD | C2 (65.4 Hz) | about 340 Hz |
+| GABBER | C2 (65.4 Hz) | about 255 Hz |
 
-A1からC2へは、**落ち着く音だけ**を3半音上げました。鳴り始めの高さと下降の速さは0.10.0と同じなので、アタック（キックの性格がいちばん出る部分）は同じ音です。下降の幅が3半音ぶん小さくなっています。C2は55Hzより少し大きく聞こえるので、アナログキックはモデルごとに音量を0.1〜0.3dB下げ、低域の聴感（K特性のラウドネス）を0.10.0にそろえています。SUBは元からC1なので変えていません。
+Going from A1 to C2, **only the settling note** was raised by three semitones. The start pitch
+and the speed of the drop are the same as 0.10.0, so the attack (where a kick's character shows
+most) sounds the same; the drop is three semitones narrower. C2 sounds a little louder than
+55 Hz, so each analogue kick model's level was lowered by 0.1–0.3 dB to match 0.10.0's low-end
+loudness (K-weighted loudness). SUB was already on C1 and is unchanged.
 
-808はもともとRolandのサービスマニュアルの調整値（56Hz）に合わせていましたが、0.11.0からはCを優先しています。MIXでアナログとデジタルを混ぜても、SUB以外は同じ音に落ち着くので、余韻がうなりません。自分で入れたWAVは音程を変えずに再生します。音程のないノイズ系の音（ハット、ラック）は調律していません。
+The 808 used to follow the tuning value in Roland's service manual (56 Hz), but from 0.11.0 C
+comes first. Blending analogue and digital with MIX settles on the same note for everything but
+SUB, so the tail does not beat. Your own WAVs play without changing pitch. Unpitched noise-like
+sounds (hats, the rack) are not tuned.
 
-## ドラムラック（RACK画面）
+## Drum rack (RACK screen)
 
-自分で用意したWAVを最大32個並べて鳴らせます。8列×4段の全PADがパッド1〜32です（左上が1、右下が32）。
+You can lay out up to 32 WAVs of your own and play them. All the pads, 8 columns × 4 rows, are
+pads 1–32 (1 at top left, 32 at bottom right).
 
 ```
-1段目  [ 1][ 2][ 3][ 4][ 5][ 6][ 7][ 8]
-2段目  [ 9][10][11][12][13][14][15][16]
-3段目  [17][18][19][20][21][22][23][24]
-4段目  [25][26][27][28][29][30][31][32]
+row 1  [ 1][ 2][ 3][ 4][ 5][ 6][ 7][ 8]
+row 2  [ 9][10][11][12][13][14][15][16]
+row 3  [17][18][19][20][21][22][23][24]
+row 4  [25][26][27][28][29][30][31][32]
 ```
 
-| 操作 | 動作 |
+| Control | Action |
 | --- | --- |
-| パッドを押さえる | そのパッドのステップ編集。上2段のパッドなら下2段、下2段のパッドなら上2段の16個が、そのパッドのステップになります（8ステップ時は近い方の1段だけ）。押さえたままステップをタップしてON/OFF。停止中は押した時に1回試聴できます |
-| パッドを押さえてノブ1を回す | そのパッドの音量 |
-| パッドを押さえてノブ2を回す（DLY） | そのパッドがディレイに入る量（センド）。0〜100%、初期値100%（0.8.0より前と同じく全パッドがディレイに入ります）。0にするとそのパッドだけ繰り返しなし。原音はいつもそのまま鳴ります。繰り返しの大きさと回数はノブ7（DELAY FB）で全パッド共通です |
-| パッドを押さえてノブ3を回す（REV） | そのパッドがリバーブに入る量。0〜100%、初期値0%（リバーブなし） |
-| パッドを押さえてノブ4を回す（CRS） | そのパッドのサンプルリデューサーの混ぜ具合（インサート）。0%＝なし（初期値）、100%＝元の音が完全にリデュースされた音に置き換わります |
-| パッドを押さえてノブ5を回す（RNG） | そのパッドのリングモジュレーターの混ぜ具合（インサート）。0%＝なし（初期値）、100%＝元の音が完全にリング変調された音に置き換わります（元の音の高さは消えます） |
-| パッドを押さえてノブ6を回す（LPF） | そのパッドのローパスフィルター。右いっぱい（初期値、画面は「-」）でフィルターなし、左に回すほどこもり、左いっぱいで80Hz。画面にはカットオフ周波数（例：800、2k4＝2.4kHz、12k）が出ます。パッドを押さえている間、ノブ6はSIDECHAINではなくLPFになります |
-| Shiftを押しながらパッド | そのパッドのミュートをON/OFF（暗い赤＝ミュート） |
-| ノブ6（SIDECHAIN、パッドを押さえていない時） | キックが鳴るたびに、ラック全体（ディレイの返りも含む）の音量を下げます。0＝オフ、上げるほど深く下がります（100%でキックの瞬間はほぼ無音）。下がるのは約2msで、そこから付点8分（3/16拍）かけてテンポに合わせて戻ります（120BPMなら約375ms）。キックの間に鳴る音も一緒に「ポンプ」します。キックをミュートしているときはかかりません |
-| ノブ7（DELAY FB） | ラック全体にかかる付点8分ディレイ。テンポに同期します。0＝ディレイなし、上げるほど繰り返しが増えます（100%で1回あたり約0.45dBしか減らない、とても長い繰り返し）。返りの音量も同じノブで決まります（数%でもう聞こえる大きさに）。繰り返しにフィルターはかけていないので、何回目でも元の音のままです |
+| Hold a pad | Step editing for that pad. For a pad in the top two rows the 16 pads of the bottom two rows become its steps, and for a pad in the bottom two rows the top two rows (with 8 steps, only the nearer row). Tap steps while holding to toggle them. While stopped, pressing auditions it once |
+| Hold a pad and turn knob 1 | That pad's level |
+| Hold a pad and turn knob 2 (DLY) | How much of that pad goes into the delay (a send). 0–100 %, default 100 % (every pad goes into the delay, as before 0.8.0). At 0 only that pad has no repeats. The dry sound always plays as is. The size and number of repeats are set by knob 7 (DELAY FB), shared by all pads |
+| Hold a pad and turn knob 3 (REV) | How much of that pad goes into the reverb. 0–100 %, default 0 % (no reverb) |
+| Hold a pad and turn knob 4 (CRS) | That pad's sample reducer mix (an insert). 0 % = none (default), 100 % = the original sound fully replaced by the reduced sound |
+| Hold a pad and turn knob 5 (RNG) | That pad's ring modulator mix (an insert). 0 % = none (default), 100 % = the original sound fully replaced by the ring-modulated sound (the original pitch disappears) |
+| Hold a pad and press the cycle button | That pad's cycle goes FULL → 3 → 5 → 7 → FULL (see "Polymeter" below) |
+| Hold a pad and turn knob 6 (LPF) | That pad's low-pass filter. Fully right (default, shown as "-") is no filter; turning left muffles it more, down to 80 Hz fully left. The screen shows the cutoff frequency (e.g. 800, 2k4 = 2.4 kHz, 12k). While a pad is held, knob 6 is LPF instead of SIDECHAIN |
+| Shift + pad | Toggles that pad's mute (dark red = muted) |
+| Knob 6 (SIDECHAIN, with no pad held) | Lowers the whole rack's level (delay returns included) every time the kick sounds. 0 = off; higher dips deeper (at 100 % almost silent at the kick). It drops in about 2 ms and recovers in time with the tempo over a dotted eighth (3/16 of a beat) (about 375 ms at 120 BPM). Sounds between kicks "pump" along with it. It does not act while the kick is muted |
+| Knob 7 (DELAY FB) | A tempo-synced dotted-eighth delay over the whole rack. 0 = no delay; higher gives more repeats (at 100 % each repeat loses only about 0.45 dB, a very long tail). The same knob sets the return level (audible even at a few %). The repeats are not filtered, so every repeat sounds like the original |
 
-**ラックのリバーブ**：ラック専用のステレオのプレート・リバーブです（キック・ハットのリバーブとは別物）。Jon Dattorroの論文「Effect Design, Part 1」（1997）のプレートの構成を元に、このモジュール用に書き起こしました。入力を4段のディフューザーでならしてから、ゆっくり揺れる2系統のループで響かせるので、金属的な鳴りが出ず、なめらかに広がります。設定は固定（プリディレイ20ms、余韻約3秒、高域はわずかに丸める程度）で、パッドごとにREVで入れる量だけを決めます。ディレイの繰り返しはリバーブには入りません（どちらもパッドの元の音から送ります）。リバーブの返りもSIDECHAINでキックと一緒にポンプし、2ページ目のBUS COMPにも入ります。何も送っていなければ計算を止めるので、CPUは使いません。
+**Polymeter**: each pad can have its own cycle. While a pad is held, the top-right pad of the same
+half (top two rows or bottom two rows) — 8 for row 1, 24 for row 3 — becomes the **cycle button**,
+and each press goes FULL → 3 → 5 → 7. When pad 8 or 24 itself is held, the pad to its left (7, 23)
+is the button. The button's colour is dark green for FULL, orange for 3, purple for 5 and pink for
+7, and the top right of the screen shows e.g. `LEN 5`.
 
-**サンプルリデューサー（CRS）**：サンプルレートを1/8（約5.5kHz）に落とします。8サンプルごとに1つを取って次まで保持するだけで、なめらかにする処理はしていません。高い折り返しノイズの「ジリジリ」としたざらつきがそのまま効果になります。設定は固定です。
+With a cycle of 3, 5 or 7, that many of the pad's steps light and repeat every cycle, counted from
+where Play was pressed. Steps beyond the cycle are not erased; they just rest, and they play again
+when you return to FULL. The cycle is saved with the set, and older sets all open as FULL, so the
+sound does not change. 3, 5 and 7 all come back to the top together every 105 steps, and stopping
+and starting again returns every pad to the top. The kick and hat have no cycle.
 
-**リングモジュレーター（RNG）**：音に500Hzの正弦波を掛けます。元の音の周波数との和と差の音（220Hzなら280Hzと720Hz）に置き換わるので、金属的でベルのような響きになります。設定は固定です。
+While a pad is held, knobs 7 and 8 do nothing. Columns 7 and 8 of the screen have no bar and show
+`EMPTY`. To fit 8 columns, the column names are two letters (VO = level, DL = DLY, RV = REV,
+CR = CRS, RM = RNG, LP = LPF). Use DELAY FB (knob 7) and the screen switch (knob 8) after letting go
+of the pad.
 
-**ローパス（LPF）**：12dB/oct、レゾナンスなし（ピークの出ない形）。
+**Rack reverb**: a stereo plate reverb just for the rack (separate from the kick / hat reverb).
+Written for this module from the plate structure in Jon Dattorro's paper "Effect Design, Part 1"
+(1997). The input is smoothed by four diffuser stages and then rings in two slowly wobbling loops,
+so it spreads smoothly without a metallic ring. The settings are fixed (20 ms pre-delay, about 3 s
+tail, the highs only slightly rounded); each pad only sets how much it sends with REV. Delay repeats
+do not go into the reverb (both are fed from the pad's original sound). The reverb return pumps with
+the kick through SIDECHAIN too, and goes into page 2's BUS COMP. If nothing is sent, the processing
+stops and uses no CPU.
 
-**各パッドの音の通り道**：音量（ノブ1）→ サンプルリデューサー → リングモジュレーター → ローパス。この3つは**インサート**で、パッドの音そのものを変えます（量を上げるほど元の音が効果音に置き換わります）。そこからの音が、そのままラックに出る（原音）のと同時に、**ディレイとリバーブへセンド**で送られます（原音は残り、ディレイとリバーブの音が足されます。ディレイの繰り返しはリバーブに入りません）。ミュートしたパッドは何も鳴らさず、何も送りません。最後に全パッドとディレイ・リバーブの返りがラックのバスで混ざり、SIDECHAINのポンプと2ページ目のBUS COMPがかかります。
+**Sample reducer (CRS)**: lowers the sample rate to 1/8 (about 5.5 kHz). It simply takes one sample
+in every eight and holds it until the next, with no smoothing. The high aliasing "fizz" grit is the
+effect itself. The settings are fixed.
 
-サンプルリデューサーとリングモジュレーターはパッドごとに処理しますが、とても軽い処理なので、32パッド全部が同時に鳴っていても負荷の増加は1ブロックあたり約23µs（持ち時間の0.8%程度）です。
+**Ring modulator (RNG)**: multiplies the sound by a 500 Hz sine. It is replaced by the sum and
+difference of the original frequencies and 500 Hz (220 Hz becomes 280 Hz and 720 Hz), giving a
+metallic, bell-like ring. The settings are fixed.
 
-パッドごとのエフェクトと送り量はSetと一緒に保存されます。以前のSetはDLY 100%・ほかは0%・LPFなしで開くので音は変わりません（キック・ハット・ラック・ディレイ・SIDECHAINを鳴らした20秒の出力が0.7.1とビット単位で一致することを確認済み）。
+**Low-pass (LPF)**: 12 dB/oct, no resonance (a shape with no peak).
 
-色：水色＝ステップあり、薄い水色＝サンプルはあるがステップなし、消灯＝サンプルなし、白＝押さえているパッド。再生中は鳴った瞬間に白っぽく光ります。
+**Each pad's signal path**: level (knob 1) → sample reducer → ring modulator → low-pass. These three
+are **inserts** and change the pad's sound itself (the higher the amount, the more the original is
+replaced by the effect). From there the sound goes straight out to the rack (dry) and is at the same
+time **sent to the delay and the reverb** (the dry sound stays, and the delay and reverb sounds are
+added; delay repeats do not go into the reverb). A muted pad plays and sends nothing. Finally all pads
+and the delay and reverb returns mix on the rack bus, where SIDECHAIN's pumping and page 2's BUS COMP
+apply.
 
-サンプルは次の場所に置きます（ファイル名は2桁の番号）。
+The sample reducer and ring modulator are processed per pad, but they are very light, so even with
+all 32 pads sounding at once the extra load is about 23 µs per block (around 0.8 % of the budget).
+
+Per-pad effects and send levels are saved with the set. Older sets open with DLY 100 %, everything
+else 0 % and no LPF, so the sound does not change (confirmed that 20 s of output playing kick, hat,
+rack, delay and SIDECHAIN is bit-identical to 0.7.1).
+
+Colours: light blue = has steps, dim light blue = has a sample but no steps, off = no sample,
+white = the held pad. While playing, a pad flashes whitish the moment it sounds.
+
+Put samples here (file names are two-digit numbers):
 
 ```
-/data/UserData/UserLibrary/Samples/Piston/Rack/01.wav 〜 32.wav
+/data/UserData/UserLibrary/Samples/Piston/Rack/01.wav to 32.wav
 ```
 
-形式はデジタルキックと同じく何でも読めます（モノラル化・44.1kHz化、1つ最長1.5秒）。音量はファイルのまま使い、0.95を超えるピークだけ下げます。読み込みはモジュールの起動時なので、置いた後はMoveを再起動してください。ラックのステップ・音量・ミュート・パッドごとのエフェクトとリバーブ量、ディレイのFB、SIDECHAINはSetと一緒に保存されます。ラックはプリセットには含まれません。
+Any format the digital kicks accept can be read (mixed to mono, converted to 44.1 kHz, up to 1.5 s
+each). The file's level is used as is; only peaks above 0.95 are lowered. Loading happens when the
+module starts, so restart Move after putting samples in place. The rack's steps, levels, mutes,
+per-pad effects and reverb amounts, the delay FB and SIDECHAIN are saved with the set. The rack is not
+part of presets.
 
-### 自作サンプルへの差し替え
+### Replacing with your own samples
 
-次の場所にWAVを置くと、デジタルキック1〜5がそれに置き換わります（Schwung Managerのファイル画面からアップロードできます。モジュールを更新しても消えません）。
+Putting WAVs in the following place replaces digital kicks 1–5 with them (you can upload them from
+Schwung Manager's file screen; they survive module updates).
 
 ```
-/data/UserData/UserLibrary/Samples/Piston/kick1.wav 〜 kick5.wav
+/data/UserData/UserLibrary/Samples/Piston/kick1.wav to kick5.wav
 ```
 
-PCM 8/16/24/32bitまたは浮動小数点、チャンネル数・サンプルレート（8〜192kHz）は問いません。モノラル化・44.1kHz化・最長2秒・音量合わせを自動で行います。読み込みはモジュールの起動時なので、置いた後はMoveを再起動してください。差し替えたスロットは画面に USR1〜5 と表示されます。
+PCM 8/16/24/32-bit or floating point, any number of channels and any sample rate (8–192 kHz). Mono
+mixing, conversion to 44.1 kHz, a 2 s maximum and level matching happen automatically. Loading happens
+when the module starts, so restart Move after putting files in place. Replaced slots show as USR1–5 on
+screen.
 
 ## MIDI
 
-スロットはMoveのトラックやコントローラーからのノートでも鳴ります。35/36＝キック、42/44＝今のDECAYのハット、46＝オープンハット。
+The slot also plays from notes from Move's tracks and controllers: 35/36 = kick, 42/44 = the hat at
+the current DECAY, 46 = open hat.
 
-## 無音でも休止しない理由
+## Why it never goes idle when silent
 
-Schwungは、1秒ほど無音が続いたスロットの処理を止め、その後は0.5秒おきにしか動かしません。PISTONは自分でシーケンスしているため、休止状態だとPlayを押してから最初の音が最大0.5秒遅れてしまいます。サウンドジェネレーター側からこれを止める仕組みがないので、出力が完全に無音になる時だけ、6LSB（−75dBFS）のごく小さなDC成分を出して休止に入らないようにしています。パルスではなくDCにしているのは、後ろに歪み系のエフェクトを挿しても聞こえる音にならないためです。何も鳴っていない間は処理を省略するので、負荷はほぼかかりません。
+Schwung stops processing a slot that has been silent for about a second, and then runs it only every
+0.5 s. PISTON sequences itself, so while parked the first sound after Play could be up to 0.5 s late.
+A sound generator has no way to switch this off, so only when the output is completely silent it puts
+out a tiny DC of 6 LSB (−75 dBFS) to keep from being parked. It is DC rather than a pulse so that even a
+distortion effect placed after it does not turn it into an audible sound. Processing is skipped while
+nothing is playing, so it costs almost nothing.
 
-## 既知の制限
+## Known limitations
 
-- Back・Menu・Moveのトラック長押しで画面を離れた時は、PADと色をMoveに戻します。ただし別のビューへ直接移った時（トラックのタップでスロット切替、Master FX、Global Settings など）は、Moveが再描画するまでPISTONの色が残ることがあります（Move側でトラックやPADモードを切り替えると直ります）。
-- 画面下の16個のステップボタンは、Schwung本体の仕様で短押しが純正側に渡ります。PISTONでは横取りできません。
-- 自作WAV（デジタルキック・ラック）はモジュールの起動時に読み込みます。
-- ラックの音量は、Moveの音量ノブでは変えられません（Schwung本体が音量ノブをモジュール画面に渡さないため）。パッドを押さえてノブ1を回してください。
-- ドラムラックの1パッドは最長1.5秒です。それより長いサンプルは1.5秒で切れます（最後は短くフェードアウト）。
-- RUMBLEページとエフェクトのページの値は、SchwungのLFOやオートメーションの対象一覧には出ません（PISTONの画面からだけ操作できます。RUMBLEの量そのもの＝1ページ目のノブ6は出ます）。
+- Leaving the screen with Back, Menu or holding a Move track gives the pads and their colours back to
+  Move. But when moving straight to another view (switching slot by tapping a track, Master FX, Global
+  Settings and so on), PISTON's colours can stay until Move redraws (switching tracks or the pad mode on
+  Move fixes it).
+- A short press of the 16 step buttons below the screen is passed to Move by Schwung itself; PISTON
+  cannot take them.
+- Your own WAVs (digital kicks, rack) are loaded when the module starts.
+- The rack level cannot be changed with Move's volume knob (Schwung itself does not pass the volume
+  knob to module screens). Hold a pad and turn knob 1.
+- One drum rack pad is at most 1.5 s. Longer samples are cut at 1.5 s (with a short fade-out at the end).
+- The RUMBLE page and effect page values do not appear in Schwung's list of LFO and automation targets
+  (they can only be operated from PISTON's screen; the amount of RUMBLE itself, knob 6 on page 1, does
+  appear).
 
-## 開発
+## Development
 
 ```
-scripts/test.sh            # ネイティブビルド＋エンジンテスト（ASan/UBSan）＋dlopenスモーク＋UIテスト＋ARM64ビルドとABI確認
-scripts/build.sh arm64     # Move用ビルド：dist/piston-module.tar.gz
-scripts/render_demo.sh     # 試聴用WAVを build/demo/ に書き出し（Moveなしで音を確認）
-scripts/analyze_rumble.py build/demo   # RUMBLEの比較用WAV（132/136/140 BPM × DEFINITION 0/50/100%）を8分ごとに測定
-scripts/install.py http://<MoveのIP>:7700   # Schwung Manager経由でインストール
+scripts/test.sh            # native build + engine tests (ASan/UBSan) + dlopen smoke + UI tests + ARM64 build and ABI check
+scripts/build.sh arm64     # build for Move: dist/piston-module.tar.gz
+scripts/render_demo.sh     # writes listening WAVs to build/demo/ (check the sound without a Move)
+scripts/analyze_rumble.py build/demo   # measures the RUMBLE comparison WAVs (132/136/140 BPM × DEFINITION 0/50/100 %) per eighth note
+scripts/install.py http://<Move's IP>:7700   # install through Schwung Manager
 ```
 
-| ファイル | 内容 |
+| File | Contents |
 | --- | --- |
-| `dsp/hkh_plugin.c` | プラグインAPI v2の窓口、状態の保存/復元、プリセットの書き出し/読み込み、画面用の状態、休止防止 |
-| `dsp/hkh_engine.c` | パラメータ、PADの命令、ドラムラック、ブロックごとの信号経路 |
-| `dsp/hkh_seq.c` | 8/16ステップのクロック追従（ホストの拍位置） |
-| `dsp/hkh_pattern.c` | SHUFFLE / RANDOM / FILL の規則と表 |
-| `dsp/hkh_kick.c` | 808 / 909 / INDUSTRIAL のアナログキック |
-| `dsp/hkh_digital.c` | ワンショット再生 |
-| `dsp/hkh_plate.c` | ラック専用のプレート・リバーブ（Dattorro型、ステレオ） |
-| `dsp/hkh_samples.c` | 内蔵キック、自作WAV（デジタルキック・ドラムラック）の読み込み（ワーカースレッド） |
-| `dsp/hkh_hat.c` | アナログハット4モデル |
-| `dsp/hkh_fx.c` | DRIVE、COMP、RUMBLE（反復の経路と拡散の経路）、REVERB、リミッター |
-| `ui_core.mjs` | PADの操作面（純粋なロジック、nodeでテスト） |
-| `ui_chain.js` | それをSchwungの画面につなぐ部分 |
+| `dsp/hkh_plugin.c` | The plugin API v2 entry points, state save / restore, preset export / import, state for the screen, idle prevention |
+| `dsp/hkh_engine.c` | Parameters, pad commands, the drum rack, the per-block signal path |
+| `dsp/hkh_seq.c` | Following the clock for 8/16 steps (the host's beat position) |
+| `dsp/hkh_pattern.c` | Rules and tables for SHUFFLE / RANDOM / FILL |
+| `dsp/hkh_kick.c` | The 808 / 909 / INDUSTRIAL analogue kicks |
+| `dsp/hkh_digital.c` | One-shot playback |
+| `dsp/hkh_plate.c` | The rack's plate reverb (Dattorro-style, stereo) |
+| `dsp/hkh_samples.c` | Built-in kicks, loading your own WAVs (digital kicks, drum rack) on a worker thread |
+| `dsp/hkh_hat.c` | The four analogue hat models |
+| `dsp/hkh_fx.c` | DRIVE, COMP, RUMBLE (the repeat path and the diffuse path), REVERB, limiter |
+| `ui_core.mjs` | The pad control surface (pure logic, tested with node) |
+| `ui_chain.js` | Connects it to Schwung's screen |
 
-音声処理の経路ではメモリ確保もロックもせず（インスタンスは6個の固定プール）、処理量も上限があります。ファイルの読み込みは、優先度を通常に下げてコア0〜2に移したワーカースレッドだけが行います。
+The audio path does no memory allocation or locking (instances come from a fixed pool of 6), and its
+amount of work is bounded. Files are loaded only by a worker thread lowered to normal priority and
+moved to cores 0–2.
 
-## ライセンス
+## Licence
 
-MIT（`LICENSE`）。外部のコードは `third_party/schwung/host/plugin_api_v1.h`（SchwungのプラグインAPIのヘッダ。MIT、Copyright (c) Charles Vestal）だけで、その表記は `THIRD_PARTY_LICENSES.md` にまとめています。
+MIT (`LICENSE`). The only external code is `third_party/schwung/host/plugin_api_v1.h` (the Schwung
+plugin API header, MIT, Copyright (c) Charles Vestal), whose notice is collected in
+`THIRD_PARTY_LICENSES.md`.
