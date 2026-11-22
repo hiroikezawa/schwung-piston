@@ -19,7 +19,7 @@ _Static_assert(ATOMIC_INT_LOCK_FREE == 2, "instance pool needs lock-free atomics
 
 /* Four chain slots can each hold one; two spare cover a swap in flight. */
 #define HKH_INSTANCES 6
-#define HKH_DSP_BUILD 1203         /* major*10000 + minor*100 + patch: 0.12.3; bump with module.json */
+#define HKH_DSP_BUILD 1205         /* major*10000 + minor*100 + patch: 0.12.5; bump with module.json */
 
 /* The shim parks a slot whose output stays below 5 LSB for ~1 s and renders
  * it only once every ~0.5 s after that (schwung_shim.c, DSP_IDLE_THRESHOLD).
@@ -497,6 +497,7 @@ static void set_param(void *ptr, const char *key, const char *val) {
     else if (!strcmp(key, "h_motion_rec")) { if (parse_int(val, 0, 1, &n)) hkh_engine_set_motion_rec(e, n); }
     else if (!strcmp(key, "k_reset")) hkh_engine_reset(e, 0);
     else if (!strcmp(key, "h_reset")) hkh_engine_reset(e, 1);
+    else if (!strcmp(key, "h_motion_clear")) hkh_engine_clear_motion(e);
     else if (!strcmp(key, "k_shuffle")) hkh_engine_shuffle(e, 0);
     else if (!strcmp(key, "h_shuffle")) hkh_engine_shuffle(e, 1);
     else if (!strcmp(key, "k_random")) hkh_engine_random(e, 0);

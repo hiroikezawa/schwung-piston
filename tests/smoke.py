@@ -471,6 +471,13 @@ assert abs(doc["mo"][2] - 0.2) < 1e-3 and abs(doc["mo"][6] - 0.8) < 1e-3 and doc
 n2 = create(b".", None)
 write("state", json.dumps(doc), inst=n2)
 assert ui_state(n2)[32:48] == motion
+# h_motion_clear (Shift + knob 1 touch): the motion only, pattern + base stay.
+write("h_motion_rec", 1, inst=n2)
+hp_before, base_before = ui_state(n2)[4], ui_state(n2)[18 + 9]
+write("h_motion_clear", 1, inst=n2)
+st = ui_state(n2)
+assert st[32:48] == [-1] * 16 and st[15] == 0, st[32:48]
+assert st[4] == hp_before and st[18 + 9] == base_before
 destroy(n2)
 # ...and RESET is the way home: no motion, closed decay, offbeat pattern.
 write("h_step", 0, inst=m)

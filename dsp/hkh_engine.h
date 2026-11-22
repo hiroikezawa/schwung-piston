@@ -158,6 +158,7 @@ void hkh_engine_random(hkh_engine *e, int hat);
 void hkh_engine_set_fill(hkh_engine *e, int hat, int on);
 void hkh_engine_offbeat(hkh_engine *e);
 void hkh_engine_set_motion_rec(hkh_engine *e, int on);
+void hkh_engine_clear_motion(hkh_engine *e);
 void hkh_engine_all_sound_off(hkh_engine *e);   /* MIDI CC 120/123 */
 
 /* Immediate hits (MIDI notes in, auditions). decay < 0 = current hat decay. */

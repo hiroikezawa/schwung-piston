@@ -7,6 +7,7 @@ import {
     createUi, padAt, noteAt, computeLeds, parseUiState, defaultState, knobStep, C,
     MODE_HAT, MODE_RACK, PARAM_KEYS, stepPad, padStep, PRESET_FILE, parsePresets,
     rackPadAt, rackStepPad, rackPadStep, PAGE_TICKS, FX_KEYS, FX_DEFS,
+    RACK_COLORS, RACK_COLOR_FILE, parseRackColors,
 } from "../ui_core.mjs";
 
 /* ---- a mock DSP that speaks the same keys as dsp/hkh_plugin.c ------------- */
@@ -44,6 +45,7 @@ function mockDsp() {
         case "k_sample_pick": d.ksample = v; break;
         case "h_model_pick": d.hmodel = v; break;
         case "h_motion_rec": d.rec = v; break;
+        case "h_motion_clear": d.motion.fill(-1); d.rec = 0; break;
         case "k_preset": { const f = String(value).split(",").map(Number); d.kmodel = f[0]; d.kp = f[2]; break; }
         case "h_preset": { const f = String(value).split(",").map(Number); d.hmodel = f[0]; d.hp = f[1]; break; }
         case "r_period": { const [a, b] = String(value).split(":").map(Number); d.rpl[a] = b; break; }
@@ -397,6 +399,30 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
     assert(!r.ui.recording);
 }
 
+/* ---- Shift + knob 1 touch clears the hat's DECAY motion (HAT only) -------- */
+{
+    const r = rig();
+    r.dsp.motion[3] = 0.7;
+    r.hostShift = true;
+    r.clear();
+    r.touch(0, true); r.touch(0, false);           /* KICK: nothing */
+    assert(!r.keys().includes("h_motion_clear"));
+    r.hostShift = false;
+    r.page(); r.tick();
+    r.clear();
+    r.touch(0, true); r.touch(0, false);           /* HAT without Shift: nothing */
+    assert(!r.keys().includes("h_motion_clear"));
+    r.hostShift = true;
+    r.touch(0, true); r.touch(0, false);
+    r.hostShift = false;
+    assert.deepEqual(r.last(), ["h_motion_clear", "1"]);
+    assert.equal(r.dsp.motion[3], -1);
+    assert.equal(r.dsp.params.h_vol, 0.7, "knob 1 (VOL) untouched");
+    r.tick();
+    assert(r.printed.includes("MOTION CLEAR"), r.printed.join("|"));
+    console.log("PASS: Shift + knob 1 touch clears the hat motion, nothing else");
+}
+
 /* ---- LEDs: playhead, open hat, fill ------------------------------------------ */
 {
     const s = defaultState();
@@ -521,9 +547,9 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
     r.page(); r.page();      /* -> RACK */
     r.tick();
     assert.equal(r.ui.state.mode, MODE_RACK);
-    assert.equal(r.leds[noteAt(0, 0)], C.RACK_DIM, "pad 1 has a sample");
+    assert.equal(r.leds[noteAt(0, 0)], RACK_COLORS[0].on, "pad 1 has a sample");
     assert.equal(r.leds[noteAt(0, 4)], C.OFF, "pad 5 is empty");
-    assert.equal(r.leds[noteAt(0, 7)], C.RACK_DIM, "pad 8: the rack is 8 x 4");
+    assert.equal(r.leds[noteAt(0, 7)], RACK_COLORS[0].on, "pad 8: the rack is 8 x 4");
     r.clear();
     r.press(noteAt(0, 1));                        /* hold pad 2 */
     assert.deepEqual(r.last(), ["r_trig", "1"], "stopped: the pad auditions");
@@ -570,7 +596,7 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
     assert.equal(r.leds[noteAt(2, 3)], C.RACK_STEP);
     r.release(noteAt(0, 1));
     r.tick();
-    assert.equal(r.leds[noteAt(2, 3)], C.RACK_DIM, "back to the rack: pad 16 has a sample, no steps");
+    assert.equal(r.leds[noteAt(2, 3)], RACK_COLORS[0].on, "back to the rack: pad 16 has a sample, no steps -- still bright");
     assert.equal(r.leds[noteAt(0, 1)], C.RACK, "pad 2 now has steps");
     /* Hold a bottom pad: its steps are the top two rows. */
     r.clear();
@@ -588,7 +614,7 @@ assert.deepEqual(padAt(stepPad(8, 16)), { row: 3, col: 0 });
     r.release(noteAt(0, 3));
     assert(!r.sets.some(([k]) => k === "r_mute"), "knob 2 no longer mutes");
     r.tick();
-    assert.equal(r.leds[noteAt(0, 2)], C.RACK_MUTED);
+    assert.equal(r.leds[noteAt(0, 2)], RACK_COLORS[0].dim, "muted: its own colour, dim");
     r.tick(2);
     assert(r.printed.includes("RACK"));
     /* No pad held: knobs do nothing here -- except knob 7, the delay FB. */
@@ -676,7 +702,7 @@ console.log("PASS: BUS COMP overview values fit their cells");
     assert(r.sets.some(([k, v]) => k === "r_step" && v === "1:2"));
     r.tick();
     assert(r.printed.includes("LEN 3"), r.printed.join("|"));
-    assert(r.printed.includes("EMPTY"), r.printed.join("|"));
+    assert(r.printed.includes("CO") && r.printed.includes("TE"), r.printed.join("|"));
     r.sets.length = 0;
     r.turn(6, 40); r.page(); r.tick(3);
     assert(!r.sets.some(([k, v]) => k === "r_fb" || k === "mode"), JSON.stringify(r.sets));
@@ -684,7 +710,42 @@ console.log("PASS: BUS COMP overview values fit their cells");
     r.press(noteAt(0, 7)); r.tick();              /* holding pad 8 itself: button = pad 7 */
     r.tap(noteAt(0, 6)); r.tick();
     assert.equal(r.dsp.rpl[7], 3);
-    console.log("PASS: period button cycles, steps past it refused, knobs 7-8 empty on a held pad");
+    console.log("PASS: period button cycles, steps past it refused, knob 8 empty on a held pad");
+}
+
+/* ---- a held rack pad's knob 7 picks its colour, saved on release ----------- */
+{
+    const r = rig();
+    r.page(); r.page(); r.tick();                 /* -> RACK */
+    r.dsp.rp[2] = 1; r.tick();
+    assert.equal(r.leds[noteAt(0, 2)], C.RACK);
+    r.press(noteAt(0, 2)); r.tick();              /* hold pad 3 */
+    assert.equal(r.leds[noteAt(0, 2)], C.WHITE);
+    r.turn(6, 5); r.tick();                       /* under one choice: nothing */
+    assert.equal(r.leds[noteAt(0, 2)], C.WHITE);
+    r.turn(6, 5); r.tick();                       /* -> RED, shown on the held pad */
+    assert.equal(r.leds[noteAt(0, 2)], RACK_COLORS[1].on);
+    assert(r.printed.includes("RE"), r.printed.join("|"));
+    assert(!(RACK_COLOR_FILE in r.files), "not written while held");
+    r.release(noteAt(0, 2)); r.tick();
+    assert.equal(r.leds[noteAt(0, 2)], RACK_COLORS[1].on, "steps: bright");
+    assert.deepEqual(JSON.parse(r.files[RACK_COLOR_FILE]).colors.slice(0, 3), [0, 0, 1]);
+    r.press(noteAt(0, 2)); r.tap(noteAt(2, 0)); r.release(noteAt(0, 2)); r.tick();   /* its only step off */
+    assert.equal(r.dsp.rp[2], 0);
+    assert.equal(r.leds[noteAt(0, 2)], RACK_COLORS[1].on, "no steps: still bright");
+    r.hostShift = true; r.tap(noteAt(0, 2)); r.hostShift = false; r.tick();
+    assert.equal(r.leds[noteAt(0, 2)], RACK_COLORS[1].dim, "muted: dim of its colour");
+    r.hostShift = true; r.tap(noteAt(0, 2)); r.hostShift = false; r.tick();
+    assert.equal(r.leds[noteAt(0, 2)], RACK_COLORS[1].on, "unmuted: bright again");
+    r.press(noteAt(0, 2)); r.turn(6, -10); r.turn(6, -10); r.release(noteAt(0, 2)); r.tick();
+    assert.equal(JSON.parse(r.files[RACK_COLOR_FILE]).colors[2], RACK_COLORS.length - 1, "wraps backwards");
+    assert(!r.sets.some(([k]) => k === "r_fb"), "knob 7 is not the delay FB on a held pad");
+    /* a fresh screen reads the file back */
+    const r2 = rig({ [RACK_COLOR_FILE]: r.files[RACK_COLOR_FILE] });
+    r2.page(); r2.page(); r2.tick();
+    assert.equal(r2.leds[noteAt(0, 2)], RACK_COLORS[RACK_COLORS.length - 1].on);
+    assert.deepEqual(parseRackColors("junk"), new Array(32).fill(0));
+    console.log("PASS: held pad + knob 7 picks the pad colour, saved on release, read back");
 }
 
 /* ---- saved presets light up as soon as the screen opens -------------------- */

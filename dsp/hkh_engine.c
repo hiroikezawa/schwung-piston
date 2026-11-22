@@ -478,6 +478,13 @@ void hkh_engine_set_motion_rec(hkh_engine *e, int on) {
         e->motion[e->seq.cur_step] = e->param[P_H_DECAY];
 }
 
+/* Shift + knob 1 touch on the HAT screen: the DECAY motion only, nothing
+ * else (pattern, DECAY base and FILL stay). */
+void hkh_engine_clear_motion(hkh_engine *e) {
+    for (int i = 0; i < HKH_STEPS; ++i) e->motion[i] = HKH_MOTION_NONE;
+    e->motion_rec = 0;
+}
+
 /* RESET is the live "get me home" button: one press, a known state. */
 void hkh_engine_reset(hkh_engine *e, int hat) {
     if (hat) {

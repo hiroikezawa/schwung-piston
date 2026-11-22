@@ -56,7 +56,8 @@
         "Hold + top-right pad",
         "  of that half = LEN",
         "  FULL > 3 > 5 > 7",
-        "Shift + pad = mute"
+        "Shift + pad = mute",
+        "Hold + knob 7 = color"
       ]
     },
     {
@@ -146,7 +147,9 @@
         "records DECAY per step",
         "while your finger is on.",
         "Blue step = open hat.",
-        "Hat RESET clears it."
+        "Hat RESET clears it.",
+        "Shift + touch knob 1:",
+        "  clear motion only."
       ]
     },
     {

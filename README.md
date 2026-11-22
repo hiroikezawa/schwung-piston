@@ -340,8 +340,9 @@ Example: touch with DECAY small as step 3 plays, then with DECAY large around st
 same offbeat hat alternates "tsk… shhh".
 
 Steps with a long DECAY light **blue** on the pads, and the screen shows each step's recorded
-value as a bar inside its box. The hat's RESET clears them all. Nothing is recorded while not
-playing, because there is no play position.
+value as a bar inside its box. The hat's RESET clears them all. **Shift + touching knob 1** on
+the HAT screen (any page) clears only the motion: the pattern and the DECAY value stay as they
+are. Nothing is recorded while not playing, because there is no play position.
 
 ## How it sounds the way it does
 
@@ -421,7 +422,7 @@ row 4  [25][26][27][28][29][30][31][32]
 | Hold a pad and turn knob 5 (RNG) | That pad's ring modulator mix (an insert). 0 % = none (default), 100 % = the original sound fully replaced by the ring-modulated sound (the original pitch disappears) |
 | Hold a pad and press the cycle button | That pad's cycle goes FULL → 3 → 5 → 7 → FULL (see "Polymeter" below) |
 | Hold a pad and turn knob 6 (LPF) | That pad's low-pass filter. Fully right (default, shown as "-") is no filter; turning left muffles it more, down to 80 Hz fully left. The screen shows the cutoff frequency (e.g. 800, 2k4 = 2.4 kHz, 12k). While a pad is held, knob 6 is LPF instead of SIDECHAIN |
-| Shift + pad | Toggles that pad's mute (dark red = muted) |
+| Shift + pad | Toggles that pad's mute (a muted pad lights in the dim shade of its own colour) |
 | Knob 6 (SIDECHAIN, with no pad held) | Lowers the whole rack's level (delay returns included) every time the kick sounds. 0 = off; higher dips deeper (at 100 % almost silent at the kick). It drops in about 2 ms and recovers in time with the tempo over a dotted eighth (3/16 of a beat) (about 375 ms at 120 BPM). Sounds between kicks "pump" along with it. It does not act while the kick is muted |
 | Knob 7 (DELAY FB) | A tempo-synced dotted-eighth delay over the whole rack. 0 = no delay; higher gives more repeats (at 100 % each repeat loses only about 0.45 dB, a very long tail). The same knob sets the return level (audible even at a few %). The repeats are not filtered, so every repeat sounds like the original |
 
@@ -437,10 +438,17 @@ when you return to FULL. The cycle is saved with the set, and older sets all ope
 sound does not change. 3, 5 and 7 all come back to the top together every 105 steps, and stopping
 and starting again returns every pad to the top. The kick and hat have no cycle.
 
-While a pad is held, knobs 7 and 8 do nothing. Columns 7 and 8 of the screen have no bar and show
-`EMPTY`. To fit 8 columns, the column names are two letters (VO = level, DL = DLY, RV = REV,
-CR = CRS, RM = RNG, LP = LPF). Use DELAY FB (knob 7) and the screen switch (knob 8) after letting go
-of the pad.
+While a pad is held, **knob 7 picks that pad's colour** (13 colours: TEAL, the default, then RED,
+ORANGE, YELLOW, LIME, GREEN, CYAN, AZURE, BLUE, VIOLET, PURPLE, MAGENTA, PINK). The held
+pad shows the colour while you choose, and column 7 of the
+screen shows `CO` with its two-letter name. A pad with a sample lights in the bright shade of its
+colour and a muted pad in the dim shade, so both the colour and the mute show at a glance; a hit
+still flashes grey. The colours
+belong to the samples (Rack/01-32.wav are shared by every set), so they are saved in
+`/data/UserData/schwung/piston-rack-colors.json` when you let go of the pad, the same in every set
+and slot. Knob 8 does nothing while a pad is held. To fit 8 columns, the column names are two
+letters (VO = level, DL = DLY, RV = REV, CR = CRS, RM = RNG, LP = LPF, CO = colour). Use DELAY FB
+(knob 7) and the screen switch (knob 8) after letting go of the pad.
 
 **Rack reverb**: a stereo plate reverb just for the rack (separate from the kick / hat reverb).
 Written for this module from the plate structure in Jon Dattorro's paper "Effect Design, Part 1"
@@ -476,7 +484,7 @@ Per-pad effects and send levels are saved with the set. Older sets open with DLY
 else 0 % and no LPF, so the sound does not change (confirmed that 20 s of output playing kick, hat,
 rack, delay and SIDECHAIN is bit-identical to 0.7.1).
 
-Colours: light blue = has steps, dim light blue = has a sample but no steps, off = no sample,
+Colours: the pad's colour = has a sample, its dim shade = muted, off = no sample,
 white = the held pad. While playing, a pad flashes whitish the moment it sounds.
 
 Put samples here (file names are two-digit numbers):

@@ -231,10 +231,41 @@ export const C = {
     OFFBEAT: 23, OFFBEAT_DIM: 109,  /* NeonPink */
     RACK: 14, RACK_DIM: 91,         /* CyanTeal: the rack switch, pads with a sample */
     RACK_STEP: 16,                  /* AzureBlue: a held pad's steps */
-    RACK_MUTED: 66,                 /* VeryDarkRed */
     /* a held pad's period button: whole / 3 / 5 / 7 */
     RACK_PERIOD: { 0: 83, 3: 3, 5: 19, 7: 23 },
 };
+
+/* Rack pad colours, picked with knob 7 while a pad is held. Index 0 is the
+ * default (C.RACK); each entry is [with steps, without steps]. */
+export const RACK_COLORS = [
+    { name: "TEAL", short: "TE", on: 14, dim: 91 },
+    { name: "RED", short: "RE", on: 1, dim: 65 },
+    { name: "ORANGE", short: "OR", on: 3, dim: 69 },
+    { name: "YELLOW", short: "YE", on: 7, dim: 77 },
+    { name: "LIME", short: "LI", on: 9, dim: 81 },
+    { name: "GREEN", short: "GR", on: 11, dim: 85 },
+    { name: "CYAN", short: "CY", on: 15, dim: 93 },
+    { name: "AZURE", short: "AZ", on: 16, dim: 95 },
+    { name: "BLUE", short: "BL", on: 17, dim: 97 },
+    { name: "VIOLET", short: "VI", on: 19, dim: 101 },
+    { name: "PURPLE", short: "PU", on: 22, dim: 107 },
+    { name: "MAGENTA", short: "MG", on: 23, dim: 109 },
+    { name: "PINK", short: "PK", on: 25, dim: 113 },
+];
+/* Colours belong to the samples (Rack/01-32.wav are shared by every Set),
+ * so they live beside them in one file, not in a Set's state. */
+export const RACK_COLOR_FILE = "/data/UserData/schwung/piston-rack-colors.json";
+export function parseRackColors(text) {
+    const out = new Array(RACK_PADS).fill(0);
+    try {
+        const a = JSON.parse(text).colors;
+        if (Array.isArray(a))
+            for (let i = 0; i < RACK_PADS; i++)
+                if (Number.isInteger(a[i]) && a[i] >= 0 && a[i] < RACK_COLORS.length) out[i] = a[i];
+    } catch (e) { /* missing or broken file: all default */ }
+    return out;
+}
+export function serializeRackColors(c) { return JSON.stringify({ colors: c }); }
 
 /* A held rack pad's knobs 1-6: its volume, its four sends and its LPF. */
 const RACK_PAD_KEYS = ["r_vol", "r_dsend", "r_rsend", "r_csend", "r_msend", "r_lpf"];
@@ -393,11 +424,14 @@ function rackLeds(s, ui, out, put) {
         const loaded = ((s.rackMask >> pad) & 1) === 1;
         const muted = ((s.rackMute >> pad) & 1) === 1;
         let color;
-        if (pad === held) color = C.WHITE;
-        else if (muted) color = C.RACK_MUTED;
+        const pc = RACK_COLORS[(ui.rackColors && ui.rackColors[pad]) || 0];
+        /* the held pad is white, or its colour while knob 7 is choosing it */
+        if (pad === held) color = ui.rackColorShow ? pc.on : C.WHITE;
+        /* muted = its own colour, dim; otherwise bright whether or not it has steps */
+        else if (muted) color = pc.dim;
         else if (!loaded) color = C.OFF;
         else if (hit(pad)) color = C.LIGHT;
-        else color = s.rp[pad] ? C.RACK : C.RACK_DIM;
+        else color = pc.on;
         put(row, col, color);
     }
     if (held >= 0) {
@@ -473,7 +507,8 @@ const REASSERT_EVERY_TICKS = 6;    /* one row of our LEDs re-sent round-robin */
  */
 export function createUi(host) {
     let s = defaultState();
-    const ui = { held: new Set(), sel: null, presets: null, preset: [-1, -1], rackHeld: -1, recArm: false };
+    const ui = { held: new Set(), sel: null, presets: null, preset: [-1, -1], rackHeld: -1, recArm: false,
+                 rackColors: null, rackColorShow: false, rackColorDirty: false };
     let shiftHeld = false;
     let lastPageTurn = -1e9;
     let pageAcc = 0;
@@ -542,6 +577,17 @@ export function createUi(host) {
     function loadPresets() {
         if (ui.presets) return;
         ui.presets = parsePresets(host.readFile ? host.readFile(PRESET_FILE) : null);
+    }
+
+    function loadRackColors() {
+        if (ui.rackColors) return;
+        ui.rackColors = parseRackColors(host.readFile ? host.readFile(RACK_COLOR_FILE) : null);
+    }
+    /* Written once the pad is let go, not on every detent. */
+    function saveRackColors() {
+        if (!ui.rackColorDirty || ui.rackHeld >= 0) return;
+        ui.rackColorDirty = false;
+        if (host.writeFile) host.writeFile(RACK_COLOR_FILE, serializeRackColors(ui.rackColors));
     }
 
     function say(text) {
@@ -623,6 +669,7 @@ export function createUi(host) {
             }
             if (!down && rackPadAt(row, col) === held) {
                 ui.rackHeld = -1;
+                ui.rackColorShow = false;
                 /* another pad of the same half may still be down */
                 for (const n of ui.held) {
                     const q = padAt(n);
@@ -643,6 +690,7 @@ export function createUi(host) {
             return;
         }
         ui.rackHeld = pad;
+        ui.rackColorShow = false;
         if (!s.running) set("r_trig", pad);
     }
 
@@ -791,8 +839,25 @@ export function createUi(host) {
 
     /* ---- knobs ---- */
     function onKnobTurn(knob, value) {
-        /* A held rack pad's screen shows knobs 7 and 8 as empty, and they are. */
-        if (knob >= 6 && page === 0 && s.mode === MODE_RACK && ui.rackHeld >= 0) return;
+        if (page === 0 && s.mode === MODE_RACK && ui.rackHeld >= 0) {
+            /* A held rack pad: knob 7 picks its colour, knob 8 does nothing. */
+            if (knob === 7) return;
+            if (knob === 6) {
+                const d = decodeDelta(value);
+                if (d === 0) return;
+                if (Math.sign(d) !== Math.sign(enumAcc[knob])) enumAcc[knob] = 0;
+                enumAcc[knob] += d;
+                if (Math.abs(enumAcc[knob]) < ENUM_TICKS) return;
+                loadRackColors();
+                const n = RACK_COLORS.length, pad = ui.rackHeld;
+                ui.rackColors[pad] = (ui.rackColors[pad] + Math.sign(enumAcc[knob]) + n) % n;
+                enumAcc[knob] = 0;
+                ui.rackColorShow = true;
+                ui.rackColorDirty = true;
+                dirty = true;
+                return;
+            }
+        }
         if (knob === 7) {
             /* Knob 8 turns the page: KICK > HAT > RACK, one page per turn
              * gesture (a spin does not race through all three). */
@@ -906,6 +971,15 @@ export function createUi(host) {
 
     function onKnobTouch(knob, down) {
         if (knob === 7) return;                              /* knob 8 turns pages */
+        if (knob === 0 && down && s.mode === MODE_HAT && isShift()) {
+            /* Shift + knob 1 touch (HAT, any page): clear the DECAY motion.
+             * Pattern and the DECAY base stay. */
+            set("h_motion_clear", 1);
+            s.motion = s.motion.map(() => null);
+            readDue = true;
+            say("MOTION CLEAR");
+            return;
+        }
         if (page > 0) {
             /* pages 2-3: a touch only shows the knob (no DECAY recording here) */
             const now = host.now();
@@ -1218,9 +1292,10 @@ export function createUi(host) {
             g.drawRect(x, 58, 15, 5, 1);
             g.fillRect(x + 1, 59, Math.round(13 * v), 3, 1);
         });
-        /* knobs 7 and 8 do nothing here. Not "-": that is an open LPF, right
-         * beside them. */
-        g.print(96 + Math.floor((31 - tw("EMPTY")) / 2), 40, "EMPTY", 1);
+        /* knob 7: the pad's colour; knob 8 does nothing here */
+        const col = RACK_COLORS[(ui.rackColors && ui.rackColors[held]) || 0].short;
+        g.print(96 + Math.floor((15 - tw("CO")) / 2), 40, "CO", 1);
+        g.print(96 + Math.floor((15 - tw(col)) / 2), 49, col, 1);
     }
 
     /* ---- lifecycle ---- */
@@ -1229,6 +1304,7 @@ export function createUi(host) {
         /* the saved presets light row 2 from the first frame, not only after
          * the first preset pad is pressed */
         loadPresets();
+        loadRackColors();
         ledCache = {};
         wasOn = false;
         dirty = true;
@@ -1236,6 +1312,7 @@ export function createUi(host) {
 
     function tick() {
         tickCount++;
+        saveRackColors();
         const on = host.displayOn();
         if (!on) {
             if (wasOn) {
