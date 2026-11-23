@@ -413,9 +413,11 @@ def note(n, v=110):
     midi(p, (c.c_uint8 * 3)(0x90, n, v), 3, 0)
 
 
-note(36)
+quiet = sum(x * x for x in block())
+for n in range(128):
+    note(n)
 e = sum(x * x for x in block())
-assert e > 1e5, "note 36 plays the kick"
+assert e <= quiet + 1e3, "no note plays the kick or the hat (MIDI FX melodies pass by)"
 midi(p, (c.c_uint8 * 3)(0x90, 200, 100), 3, 0)   # data byte out of range
 midi(p, (c.c_uint8 * 3)(0x90, 36, 100), 2, 0)    # short message
 midi(p, (c.c_uint8 * 1)(0xFE), 1, 0)             # active sensing: ignored

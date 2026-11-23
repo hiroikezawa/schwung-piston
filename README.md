@@ -515,8 +515,9 @@ screen.
 
 ## MIDI
 
-The slot also plays from notes from Move's tracks and controllers: 35/36 = kick, 42/44 = the hat at
-the current DECAY, 46 = open hat.
+PISTON ignores MIDI notes (since 0.12.6): it plays only from its own sequencers and pads, so a
+melody from a MIDI FX in the same slot, Move's track or a controller never fires the kick or the hat.
+The notes still reach the slot's audio FX as before. Only MIDI clock and All Sound Off are read.
 
 ## Why it never goes idle when silent
 

@@ -19,7 +19,7 @@ _Static_assert(ATOMIC_INT_LOCK_FREE == 2, "instance pool needs lock-free atomics
 
 /* Four chain slots can each hold one; two spare cover a swap in flight. */
 #define HKH_INSTANCES 6
-#define HKH_DSP_BUILD 1205         /* major*10000 + minor*100 + patch: 0.12.5; bump with module.json */
+#define HKH_DSP_BUILD 1206         /* major*10000 + minor*100 + patch: 0.12.6; bump with module.json */
 
 /* The shim parks a slot whose output stays below 5 LSB for ~1 s and renders
  * it only once every ~0.5 s after that (schwung_shim.c, DSP_IDLE_THRESHOLD).
@@ -91,26 +91,18 @@ static void on_clock(hkh_instance *inst, uint8_t status) {
     }
 }
 
-/* Notes let Move's own sequencer (or a controller) play the two voices:
- * 35/36 kick, 42/44 hat at the current DECAY, 46 an open hat. */
+/* Notes are ignored: PISTON plays only from its own sequencers and pads, so
+ * a melody from a MIDI FX (or Move's track) in the same slot never fires the
+ * kick or the hat. The chain still hands the same MIDI to the slot's audio FX,
+ * so it passes on untouched. Only the clock and all-sound-off are read. */
 static void on_midi(void *ptr, const uint8_t *msg, int len, int source) {
     (void)source;
     if (!ptr || !msg || len < 1) return;
     hkh_instance *inst = ptr;
     if (msg[0] >= 0xF8) { on_clock(inst, msg[0]); return; }
     if (len < 3 || (msg[1] & 0x80) || (msg[2] & 0x80)) return;
-    uint8_t type = msg[0] & 0xF0;
-    if (type == 0x90 && msg[2] > 0) {
-        float vel = (float)msg[2] / 127.0f;
-        switch (msg[1]) {
-        case 35: case 36: hkh_engine_trigger_kick(&inst->engine, vel); break;
-        case 42: case 44: hkh_engine_trigger_hat(&inst->engine, vel, -1.0f); break;
-        case 46: hkh_engine_trigger_hat(&inst->engine, vel, 0.75f); break;
-        default: break;
-        }
-    } else if (type == 0xB0 && (msg[1] == 120 || msg[1] == 123)) {
+    if ((msg[0] & 0xF0) == 0xB0 && (msg[1] == 120 || msg[1] == 123))
         hkh_engine_all_sound_off(&inst->engine);
-    }
 }
 
 /* ---- parameters --------------------------------------------------------- */
